@@ -32,7 +32,7 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 
 /* Keep calendar keyboard focus on the date marker, not the full cell button. */
 .has-entry:focus-visible { outline: none; }
-.has-entry:focus-visible span { outline: 2px solid var(--focus); outline-offset: 5px; }
+.has-entry:focus-visible span { outline: none; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--focus); }
 
 /* Photo grid and image detail view */
 .picture-view { padding-bottom: 36px; }
