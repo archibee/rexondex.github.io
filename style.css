@@ -30,10 +30,7 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 
-/* Keep calendar keyboard focus on the date marker, not the full cell button. */
-.has-entry:focus-visible { outline: none; }
-.has-entry:focus-visible span { outline: none; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--focus); }
-.has-entry { cursor: default; }
+.has-entry { cursor: pointer; }
 .has-entry:hover span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); transform: scale(1.12); }
 
 /* Photo grid and image detail view */
