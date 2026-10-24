@@ -12,9 +12,9 @@
 }
 
 :root {
+  --content-gutter: 20px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 14px;
   --shadow-panel: 0 12px 32px rgb(16 24 40 / 7%);
   --transition: 150ms ease;
 }
