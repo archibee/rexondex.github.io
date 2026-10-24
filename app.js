@@ -148,6 +148,7 @@
 
   const paths = {
     feed: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5Z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    picture: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>',
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06A1.7 1.7 0 0 0 19.4 9c.15.6.7 1 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/>',
@@ -179,17 +180,25 @@
       this.feedCursor = 0;
       this.pageSize = 8;
       this.referencesLoaded = false;
+      this.pictureSectors = (window.PICTURE_SECTORS || [])
+        .filter((sector) => sector && /^[a-z0-9-]+$/i.test(String(sector.id)) && Array.isArray(sector.files))
+        .map((sector) => ({
+          id: String(sector.id),
+          files: [...new Set(sector.files.map(String).filter((file) => /^[^/\\]+\.(jpe?g|png|webp|gif|avif|heic)$/i.test(file)))].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      this.activePictureSector = this.pictureSectors[0]?.id || '';
     }
 
     mount() {
       this.root.innerHTML = this.shell();
-      this.els = Object.fromEntries(['feedView', 'feedList', 'feedMore', 'calendarView', 'profileView', 'settingsView', 'yearNav', 'monthNav', 'calendar', 'calendarTitle', 'monthMeta', 'mobileViewTitle'].map((id) => [id, document.getElementById(id)]));
-      this.bind(); this.renderCalendar(); this.renderYears(); this.renderMonths(); this.renderNextFeedPage(); this.openHashEntry();
+      this.els = Object.fromEntries(['feedView', 'pictureView', 'pictureSectorNav', 'pictureCount', 'pictureGrid', 'pictureEmpty', 'pictureDialog', 'pictureDialogImage', 'pictureDialogSector', 'pictureDialogName', 'pictureDialogSize', 'pictureDialogOriginal', 'pictureDialogClose', 'feedList', 'feedMore', 'calendarView', 'profileView', 'settingsView', 'yearNav', 'monthNav', 'calendar', 'calendarTitle', 'monthMeta', 'mobileViewTitle'].map((id) => [id, document.getElementById(id)]));
+      this.bind(); this.renderPictureSectors(); this.renderCalendar(); this.renderYears(); this.renderMonths(); this.renderNextFeedPage(); this.openHashEntry();
     }
 
     navItems() {
       return [
-        ['feed', '일기', 'feed'], ['calendar', '달력', 'calendar'], ['profile', '프로필', 'user'], ['settings', '설정', 'settings']
+        ['feed', '일기', 'feed'], ['picture', '사진', 'picture'], ['calendar', '달력', 'calendar'], ['profile', '프로필', 'user'], ['settings', '설정', 'settings']
       ].map(([view, label, icon]) => `<button type="button" data-view="${view}" aria-label="${label}">${svg(icon)}<span>${label}</span></button>`).join('');
     }
 
@@ -200,6 +209,12 @@
       <aside class="side-nav"><a class="wordmark" href="./">${brandLogo}<span>rexondex</span><small>archive</small></a><nav aria-label="주요 메뉴">${this.navItems()}</nav><p>${this.archive.ids.length}개의 기록</p></aside>
       <main class="main-column">
         <section class="view feed-view" id="feedView" aria-labelledby="feedTitle"><header class="view-header"><h1 id="feedTitle">일기</h1><p>최근 기록부터 표시됩니다.</p></header><div id="feedList"></div><button class="feed-more" id="feedMore" type="button">이전 기록 더 보기</button></section>
+        <section class="view picture-view" id="pictureView" aria-labelledby="pictureTitle" hidden>
+          <header class="view-header"><h1 id="pictureTitle">사진</h1><p>섹터별 사진 모음입니다.</p></header>
+          <div class="picture-toolbar"><nav class="picture-sector-nav" id="pictureSectorNav" aria-label="사진 섹터"></nav><span class="picture-count" id="pictureCount"></span></div>
+          <div class="picture-grid" id="pictureGrid" aria-label="사진 목록"></div>
+          <p class="picture-empty" id="pictureEmpty" hidden>이 섹터에는 등록된 사진이 없습니다.</p>
+        </section>
         <section class="view calendar-view" id="calendarView" aria-labelledby="calendarPageTitle" hidden>
           <header class="view-header"><h1 id="calendarPageTitle">달력</h1><p>날짜별 기록을 찾아봅니다.</p></header>
           <div class="calendar-tools"><nav id="yearNav" class="year-nav" aria-label="연도 선택"></nav><div class="month-stepper"><button data-move="-1" aria-label="이전 달">${svg('left')}</button><button data-move="1" aria-label="다음 달">${svg('right')}</button></div></div>
@@ -210,7 +225,14 @@
       </main>
       <aside class="right-panel"><div class="right-card"><div class="mini-profile">${profileImage}<div><strong>rexondex</strong><span>rexondex</span></div></div><dl><div><dt>기록</dt><dd>${this.archive.ids.length}</dd></div><div><dt>최근</dt><dd>${this.archive.ids.at(-1) || '—'}</dd></div></dl>${socialLinks(true)}</div></aside>
       <nav class="bottom-nav" aria-label="주요 메뉴">${this.navItems()}</nav>
-    </div>`;
+    </div>
+    <dialog class="picture-dialog" id="pictureDialog" aria-labelledby="pictureDialogSector">
+      <div class="picture-dialog-panel">
+        <header><div><strong id="pictureDialogSector"></strong><span id="pictureDialogName"></span></div><button type="button" id="pictureDialogClose" aria-label="사진 닫기">×</button></header>
+        <div class="picture-dialog-stage"><img id="pictureDialogImage" alt=""></div>
+        <footer><span id="pictureDialogSize"></span><a id="pictureDialogOriginal" href="#" target="_blank" rel="noopener">원본 열기</a></footer>
+      </div>
+    </dialog>`;
     }
 
     bind() {
@@ -218,6 +240,27 @@
       document.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', () => this.store.moveMonth(Number(button.dataset.move))));
       document.querySelectorAll('[data-theme-id]').forEach((button) => button.addEventListener('click', () => { this.themes.apply(button.dataset.themeId); this.renderThemeState(); }));
       this.els.feedMore.addEventListener('click', () => this.renderNextFeedPage());
+      this.els.pictureSectorNav.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-picture-sector]');
+        if (!button) return;
+        this.activePictureSector = button.dataset.pictureSector;
+        this.renderPictureSectors();
+      });
+      this.els.pictureGrid.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-picture-index]');
+        if (button) this.openPicture(Number(button.dataset.pictureIndex));
+      });
+      this.els.pictureDialogClose.addEventListener('click', () => this.els.pictureDialog.close());
+      this.els.pictureDialog.addEventListener('click', (event) => { if (event.target === this.els.pictureDialog) this.els.pictureDialog.close(); });
+      this.els.pictureDialogImage.addEventListener('load', () => {
+        const image = this.els.pictureDialogImage;
+        const format = image.src.split('.').pop().split(/[?#]/)[0].toUpperCase();
+        this.els.pictureDialogSize.textContent = `${image.naturalWidth} × ${image.naturalHeight} px · ${format}`;
+      });
+      this.els.pictureDialogImage.addEventListener('error', () => {
+        const format = this.els.pictureDialogName.textContent.split('.').pop().toUpperCase();
+        this.els.pictureDialogSize.textContent = `미리보기를 지원하지 않을 수 있습니다 · ${format}`;
+      });
       this.store.addEventListener('change', () => { this.renderYears(); this.renderMonths(); this.renderCalendar(); });
       this.els.calendar.addEventListener('click', (event) => { const button = event.target.closest('[data-entry]'); if (button) this.scrollToEntry(button.dataset.entry, true); });
       window.addEventListener('hashchange', () => this.openHashEntry());
@@ -226,13 +269,51 @@
 
     showView(view) {
       this.activeView = view;
-      ['feed', 'calendar', 'profile', 'settings'].forEach((name) => { document.getElementById(`${name}View`).hidden = name !== view; });
-      this.els.mobileViewTitle.textContent = { feed: '일기', calendar: '달력', profile: '프로필', settings: '설정' }[view];
+      ['feed', 'picture', 'calendar', 'profile', 'settings'].forEach((name) => { document.getElementById(`${name}View`).hidden = name !== view; });
+      this.els.mobileViewTitle.textContent = { feed: '일기', picture: '사진', calendar: '달력', profile: '프로필', settings: '설정' }[view];
       if (view === 'calendar') this.loadReferences();
       this.renderNavState(); window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     renderNavState() { document.querySelectorAll('[data-view]').forEach((button) => { const active = button.dataset.view === this.activeView; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); }); }
     renderThemeState() { document.querySelectorAll('[data-theme-id]').forEach((button) => button.classList.toggle('active', button.dataset.themeId === this.themes.current)); }
+
+    picturePath(sector, file) { return `./picture/${encodeURIComponent(sector)}/${encodeURIComponent(file)}`; }
+    renderPictureSectors() {
+      this.els.pictureSectorNav.innerHTML = this.pictureSectors.map((sector) => `<button type="button" data-picture-sector="${escapeHtml(sector.id)}" class="${sector.id === this.activePictureSector ? 'active' : ''}" aria-pressed="${sector.id === this.activePictureSector}">${escapeHtml(sector.id)}<small>${sector.files.length}</small></button>`).join('');
+      this.renderPictures();
+    }
+    renderPictures() {
+      const sector = this.pictureSectors.find((item) => item.id === this.activePictureSector);
+      if (!sector) {
+        this.els.pictureCount.textContent = '0장';
+        this.els.pictureGrid.innerHTML = '';
+        this.els.pictureEmpty.hidden = false;
+        return;
+      }
+      this.els.pictureCount.textContent = `${sector.files.length}장`;
+      this.els.pictureEmpty.hidden = sector.files.length > 0;
+      this.els.pictureGrid.innerHTML = sector.files.map((file, index) => `<button type="button" class="picture-tile" data-picture-index="${index}" aria-label="${escapeHtml(`${sector.id}/${file} 사진 크게 보기`)}"><img src="${escapeHtml(this.picturePath(sector.id, file))}" alt="" loading="lazy" decoding="async"></button>`).join('');
+      this.els.pictureGrid.querySelectorAll('img').forEach((image) => image.addEventListener('error', () => {
+        const fallback = document.createElement('span');
+        fallback.className = 'picture-tile-fallback';
+        fallback.textContent = '미리보기 없음';
+        image.replaceWith(fallback);
+      }, { once: true }));
+    }
+    openPicture(index) {
+      const sector = this.pictureSectors.find((item) => item.id === this.activePictureSector);
+      const file = sector?.files[index];
+      if (!sector || !file) return;
+      const source = this.picturePath(sector.id, file);
+      const image = this.els.pictureDialogImage;
+      this.els.pictureDialogSector.textContent = sector.id;
+      this.els.pictureDialogName.textContent = file;
+      this.els.pictureDialogSize.textContent = '이미지 정보를 불러오는 중';
+      this.els.pictureDialogOriginal.href = source;
+      image.alt = `${sector.id}/${file}`;
+      image.src = source;
+      if (!this.els.pictureDialog.open) this.els.pictureDialog.showModal();
+    }
 
     async renderNextFeedPage() {
       if (this.feedLoadPromise) return this.feedLoadPromise;

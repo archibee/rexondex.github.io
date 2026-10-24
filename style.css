@@ -30,6 +30,47 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 
+/* Photo grid and image detail view */
+.picture-view { padding-bottom: 36px; }
+.picture-toolbar { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); }
+.picture-sector-nav { display: flex; min-width: 0; gap: 8px; overflow-x: auto; scrollbar-width: thin; }
+.picture-sector-nav button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 9px; min-height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; }
+.picture-sector-nav button:hover { background: var(--surface-2); color: var(--text); }
+.picture-sector-nav button.active { border-color: var(--border-strong); background: var(--surface-2); color: var(--text); font-weight: 700; }
+.picture-sector-nav small { color: var(--muted); font-size: 10px; }
+.picture-count { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+.picture-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.picture-tile { position: relative; display: block; overflow: hidden; aspect-ratio: 1; padding: 0; border: 0; background: var(--surface-2); }
+.picture-tile img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
+.picture-tile::after { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / 28%); color: #fff; font-size: 13px; font-weight: 700; content: "크게 보기"; opacity: 0; transition: opacity .15s ease; }
+.picture-tile:hover::after, .picture-tile:focus-visible::after { opacity: 1; }
+.picture-tile:hover img { transform: scale(1.035); }
+.picture-tile-fallback { display: grid; width: 100%; height: 100%; place-items: center; padding: 8px; color: var(--muted); font-size: 11px; }
+.picture-empty { padding: 48px 20px; color: var(--muted); text-align: center; }
+.bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.picture-dialog { width: min(1000px, 94vw); max-width: none; max-height: 94vh; max-height: 94dvh; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow-panel); }
+.picture-dialog::backdrop { background: rgb(5 7 10 / 76%); backdrop-filter: blur(3px); }
+.picture-dialog-panel { display: flex; max-height: 94vh; max-height: 94dvh; flex-direction: column; }
+.picture-dialog header, .picture-dialog footer { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 16px; }
+.picture-dialog header { border-bottom: 1px solid var(--border); }
+.picture-dialog header>div { display: grid; min-width: 0; gap: 2px; }
+.picture-dialog header strong { font-size: 13px; }
+.picture-dialog header span { overflow-wrap: anywhere; color: var(--muted); font-size: 11px; }
+.picture-dialog header button { flex: 0 0 auto; width: 38px; height: 38px; border: 0; border-radius: 50%; background: var(--surface-2); font-size: 25px; line-height: 1; }
+.picture-dialog-stage { display: grid; min-height: 120px; max-height: 74vh; max-height: 74dvh; flex: 1 1 auto; place-items: center; overflow: auto; background: #08090b; }
+.picture-dialog-stage img { display: block; max-width: 100%; max-height: 74vh; max-height: 74dvh; object-fit: contain; }
+.picture-dialog footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+.picture-dialog footer a { flex: 0 0 auto; color: var(--text); font-weight: 600; }
+@media (max-width: 620px) {
+  .picture-toolbar { min-height: 58px; padding: 8px 14px; }
+  .picture-sector-nav { gap: 6px; }
+  .picture-sector-nav button { min-height: 36px; padding-inline: 10px; }
+  .picture-grid { gap: 2px; }
+  .picture-dialog { width: calc(100vw - 16px); border-radius: 12px; }
+  .picture-dialog-stage { max-height: 68vh; max-height: 68dvh; }
+  .picture-dialog-stage img { max-height: 68vh; max-height: 68dvh; }
+}
+
 /* Shared layout rhythm and interaction states */
 .side-nav nav button.active { background: var(--accent-soft); color: var(--accent); }
 .main-column { box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 35%, transparent); }
