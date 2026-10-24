@@ -87,7 +87,7 @@
 
     async get(id) {
       if (this.#cache.has(id)) return this.#cache.get(id);
-      const response = await fetch(`${this.basePath}/${id}`);
+      const response = await fetch(`${this.basePath}/${id}.md`);
       if (!response.ok) throw new Error(`Diary ${id}: HTTP ${response.status}`);
       const entry = { id, ...parseDiaryMarkdown(await response.text()) };
       this.#cache.set(id, entry);
