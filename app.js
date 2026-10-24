@@ -184,7 +184,7 @@
     mount() {
       this.root.innerHTML = this.shell();
       this.els = Object.fromEntries(['feedView', 'feedList', 'feedMore', 'calendarView', 'profileView', 'settingsView', 'yearNav', 'monthNav', 'calendar', 'calendarTitle', 'monthMeta', 'mobileViewTitle'].map((id) => [id, document.getElementById(id)]));
-      this.bind(); this.renderCalendar(); this.renderYears(); this.renderMonths(); this.renderNextFeedPage();
+      this.bind(); this.renderCalendar(); this.renderYears(); this.renderMonths(); this.renderNextFeedPage(); this.openHashEntry();
     }
 
     navItems() {
@@ -219,7 +219,8 @@
       document.querySelectorAll('[data-theme-id]').forEach((button) => button.addEventListener('click', () => { this.themes.apply(button.dataset.themeId); this.renderThemeState(); }));
       this.els.feedMore.addEventListener('click', () => this.renderNextFeedPage());
       this.store.addEventListener('change', () => { this.renderYears(); this.renderMonths(); this.renderCalendar(); });
-      this.els.calendar.addEventListener('click', (event) => { const button = event.target.closest('[data-entry]'); if (button) this.scrollToEntry(button.dataset.entry); });
+      this.els.calendar.addEventListener('click', (event) => { const button = event.target.closest('[data-entry]'); if (button) this.scrollToEntry(button.dataset.entry, true); });
+      window.addEventListener('hashchange', () => this.openHashEntry());
       this.renderNavState(); this.renderThemeState();
     }
 
@@ -241,7 +242,7 @@
       this.els.feedMore.textContent = '기록을 불러오는 중...';
       this.feedLoadPromise = Promise.all(ids.map(async (id) => {
         const entry = await this.repository.get(id), date = parseDiaryId(id);
-        return `<article class="diary-post" id="entry-${id}"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><span>${id}</span></footer></article>`;
+        return `<article class="diary-post" id="daily-${id}"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="#daily-${id}" aria-label="${id} 일기 고유 링크">${id} · 고유 링크</a></footer></article>`;
       }));
       const posts = await this.feedLoadPromise;
       this.feedLoadPromise = null;
@@ -258,11 +259,18 @@
       this.store.setReferences(await this.repository.findReferenceIds(this.archive.ids));
     }
 
-    async scrollToEntry(id) {
-      this.showView('feed');
+    openHashEntry() {
+      const match = window.location.hash.match(/^#daily-(\d{6})$/);
+      if (match && this.archive.idSet.has(match[1])) this.scrollToEntry(match[1]);
+    }
+
+    async scrollToEntry(id, updateUrl = false) {
+      if (!this.archive.idSet.has(id)) return;
+      if (updateUrl && window.location.hash !== `#daily-${id}`) window.history.pushState(null, '', `#daily-${id}`);
+      if (this.activeView !== 'feed') this.showView('feed');
       const targetIndex = this.feedIds.indexOf(id);
       while (this.feedCursor <= targetIndex) await this.renderNextFeedPage();
-      document.getElementById(`entry-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById(`daily-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     renderYears() { this.els.yearNav.innerHTML = this.archive.years.map((year) => `<button class="${year === this.store.state.year ? 'active' : ''}" data-year="${year}">${year}<small>${this.archive.count(year)}</small></button>`).join(''); this.els.yearNav.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => this.store.view(Number(button.dataset.year), this.store.state.month))); }
     renderMonths() { this.els.monthNav.innerHTML = Array.from({ length: 12 }, (_, month) => `<button class="${month === this.store.state.month ? 'active' : ''}" data-month="${month}">${month + 1}월</button>`).join(''); this.els.monthNav.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => this.store.view(this.store.state.year, Number(button.dataset.month)))); }
