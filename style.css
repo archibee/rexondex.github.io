@@ -130,3 +130,18 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
   .year-nav button, .month-stepper button, .picture-sector-nav button { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+
+/* Let the photo tab use the width available to an Instagram-style profile grid. */
+@media (min-width: 621px) {
+  .social-shell.picture-layout { grid-template-columns: 88px minmax(0, min(1120px, calc(100vw - 88px))); }
+  .picture-layout .side-nav { align-items: center; padding-inline: 12px; }
+  .picture-layout .wordmark span, .picture-layout .wordmark small { display: none; }
+  .picture-layout .side-nav nav button { justify-content: center; width: 52px; padding: 0; }
+  .picture-layout .side-nav nav button span, .picture-layout .side-nav>p { display: none; }
+  .picture-layout .right-panel { display: none; }
+}
+
+/* Keep the image grid flush to the content edge, without the calendar-style card frame. */
+.picture-grid { gap: 4px; margin: 0; overflow: visible; border: 0; border-radius: 0; background: var(--surface); box-shadow: none; }
+.picture-tile { border-radius: 0; }
+@media (max-width: 620px) { .picture-grid { gap: 2px; } }
