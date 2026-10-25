@@ -323,7 +323,7 @@
       this.els.feedMore.textContent = '기록을 불러오는 중...';
       this.feedLoadPromise = Promise.all(ids.map(async (id) => {
         const entry = await this.repository.get(id), date = parseDiaryId(id);
-        return `<article class="diary-post" id="daily-${id}"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="#daily-${id}" aria-label="${id} 일기 고유 링크">${id} · 고유 링크</a></footer></article>`;
+        return `<article class="diary-post" id="daily-${id}"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="#daily-${id}" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
       }));
       const posts = await this.feedLoadPromise;
       this.feedLoadPromise = null;
