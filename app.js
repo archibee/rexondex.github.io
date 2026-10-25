@@ -124,6 +124,7 @@
 
 
   const THEMES = [
+    { id: 'system', name: '기기 설정 따르기', description: '기기의 라이트·다크 모드를 사용합니다' },
     { id: 'light', name: '밝게', description: '흰색 배경' },
     { id: 'dark', name: '어둡게', description: '검은색 배경' }
   ];
@@ -131,16 +132,22 @@
   class ThemeManager {
     constructor(storage = localStorage) {
       this.storage = storage;
-      this.current = THEMES.some((theme) => theme.id === document.documentElement.dataset.theme)
-        ? document.documentElement.dataset.theme : 'light';
+      this.systemPreference = window.matchMedia('(prefers-color-scheme: dark)');
+      const saved = storage.getItem('archive-theme');
+      this.current = THEMES.some((theme) => theme.id === saved) ? saved : 'light';
+      this.systemPreference.addEventListener('change', () => {
+        if (this.current === 'system') this.apply('system');
+      });
       this.apply(this.current);
     }
     apply(id) {
       if (!THEMES.some((theme) => theme.id === id)) return;
-      this.current = id; document.documentElement.dataset.theme = id;
+      this.current = id;
       this.storage.setItem('archive-theme', id);
+      const resolved = id === 'system' ? (this.systemPreference.matches ? 'dark' : 'light') : id;
+      document.documentElement.dataset.theme = resolved;
       const colors = { light: '#f5f6f8', dark: '#0f1115' };
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', colors[id]);
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', colors[resolved]);
     }
   }
 
