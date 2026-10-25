@@ -124,9 +124,9 @@
 
 
   const THEMES = [
-    { id: 'system', name: '기기 설정 따르기', description: '기기의 라이트·다크 모드를 사용합니다' },
-    { id: 'light', name: '밝게', description: '흰색 배경' },
-    { id: 'dark', name: '어둡게', description: '검은색 배경' }
+    { id: 'system', name: '기기 설정 따르기'},
+    { id: 'light', name: '밝게' },
+    { id: 'dark', name: '어둡게' }
   ];
 
   class ThemeManager {
@@ -134,10 +134,12 @@
       this.storage = storage;
       this.systemPreference = window.matchMedia('(prefers-color-scheme: dark)');
       const saved = storage.getItem('archive-theme');
-      this.current = THEMES.some((theme) => theme.id === saved) ? saved : 'light';
-      this.systemPreference.addEventListener('change', () => {
+      this.current = THEMES.some((theme) => theme.id === saved) ? saved : 'system';
+      const updateSystemTheme = () => {
         if (this.current === 'system') this.apply('system');
-      });
+      };
+      if (this.systemPreference.addEventListener) this.systemPreference.addEventListener('change', updateSystemTheme);
+      else this.systemPreference.addListener(updateSystemTheme);
       this.apply(this.current);
     }
     apply(id) {
@@ -215,20 +217,20 @@
       <header class="mobile-header"><a href="./">${brandLogo}<span>rexondex</span></a><span id="mobileViewTitle" aria-live="polite">일기</span></header>
       <aside class="side-nav"><a class="wordmark" href="./">${brandLogo}<span>rexondex</span><small>archive</small></a><nav aria-label="주요 메뉴">${this.navItems()}</nav><p>${this.archive.ids.length}개의 기록</p></aside>
       <main class="main-column">
-        <section class="view feed-view" id="feedView" aria-labelledby="feedTitle"><header class="view-header"><h1 id="feedTitle">일기</h1><p>최근 기록부터 표시됩니다.</p></header><div id="feedList"></div><button class="feed-more" id="feedMore" type="button">이전 기록 더 보기</button></section>
+        <section class="view feed-view" id="feedView" aria-labelledby="feedTitle"><header class="view-header"><h1 id="feedTitle">일기</h1></header><div id="feedList"></div><button class="feed-more" id="feedMore" type="button">이전 기록 더 보기</button></section>
         <section class="view picture-view" id="pictureView" aria-labelledby="pictureTitle" hidden>
-          <header class="view-header"><h1 id="pictureTitle">사진</h1><p>섹터별 사진 모음입니다.</p></header>
+          <header class="view-header"><h1 id="pictureTitle">사진</h1></header>
           <div class="picture-toolbar"><nav class="picture-sector-nav" id="pictureSectorNav" aria-label="사진 섹터"></nav><span class="picture-count" id="pictureCount"></span></div>
           <div class="picture-grid" id="pictureGrid" aria-label="사진 목록"></div>
           <p class="picture-empty" id="pictureEmpty" hidden>이 섹터에는 등록된 사진이 없습니다.</p>
         </section>
         <section class="view calendar-view" id="calendarView" aria-labelledby="calendarPageTitle" hidden>
-          <header class="view-header"><h1 id="calendarPageTitle">달력</h1><p>날짜별 기록을 찾아봅니다.</p></header>
+          <header class="view-header"><h1 id="calendarPageTitle">달력</h1></header>
           <div class="calendar-tools"><nav id="yearNav" class="year-nav" aria-label="연도 선택"></nav><div class="month-stepper"><button data-move="-1" aria-label="이전 달">${svg('left')}</button><button data-move="1" aria-label="다음 달">${svg('right')}</button></div></div>
           <div class="calendar-card"><header><h2 id="calendarTitle"></h2><span id="monthMeta"></span></header><nav class="month-nav" id="monthNav" aria-label="월 선택"></nav><div class="weekday-row" aria-hidden="true"><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span></div><div class="calendar-grid" id="calendar" role="grid"></div></div>
         </section>
-        <section class="view profile-view" id="profileView" aria-labelledby="profileTitle" hidden><header class="view-header"><h1>프로필</h1><p>사용자 정보와 연결된 링크입니다.</p></header><div class="profile-card">${profileImage}<div><h2 id="profileTitle">rexondex</h2><p>rexondex</p></div></div><dl><div><dt>작성한 날</dt><dd>${this.archive.ids.length}</dd></div><div><dt>수록 연도</dt><dd>${this.archive.years.length}</dd></div><div><dt>최근 기록</dt><dd>${this.archive.ids.at(-1) || '—'}</dd></div></dl><h2 class="profile-section-title">링크</h2>${socialLinks()}</section>
-        <section class="view settings-view" id="settingsView" aria-labelledby="settingsTitle" hidden><header class="view-header"><h1 id="settingsTitle">설정</h1><p>화면 표시 방식을 선택합니다.</p></header><div class="setting-group"><h2>화면 모드</h2>${THEMES.map((theme) => `<button type="button" data-theme-id="${theme.id}"><span>${theme.name}<small>${theme.description}</small></span><b>✓</b></button>`).join('')}</div></section>
+        <section class="view profile-view" id="profileView" aria-labelledby="profileTitle" hidden><header class="view-header"><h1>프로필</h1></header><div class="profile-card">${profileImage}<div><h2 id="profileTitle">rexondex</h2><p>rexondex</p></div></div><dl><div><dt>작성한 날</dt><dd>${this.archive.ids.length}</dd></div><div><dt>수록 연도</dt><dd>${this.archive.years.length}</dd></div><div><dt>최근 기록</dt><dd>${this.archive.ids.at(-1) || '—'}</dd></div></dl><h2 class="profile-section-title">링크</h2>${socialLinks()}</section>
+        <section class="view settings-view" id="settingsView" aria-labelledby="settingsTitle" hidden><header class="view-header"><h1 id="settingsTitle">설정</h1></header><div class="setting-group"><h2>화면 모드</h2>${THEMES.map((theme) => `<button type="button" data-theme-id="${theme.id}"><span>${theme.name}<small>${theme.description}</small></span><b>✓</b></button>`).join('')}</div></section>
       </main>
       <aside class="right-panel"><div class="right-card"><div class="mini-profile">${profileImage}<div><strong>rexondex</strong><span>rexondex</span></div></div><dl><div><dt>기록</dt><dd>${this.archive.ids.length}</dd></div><div><dt>최근</dt><dd>${this.archive.ids.at(-1) || '—'}</dd></div></dl>${socialLinks(true)}</div></aside>
       <nav class="bottom-nav" aria-label="주요 메뉴">${this.navItems()}</nav>
