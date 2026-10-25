@@ -135,6 +135,3 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 .picture-grid { gap: 4px; margin: 0; overflow: visible; border: 0; border-radius: 0; background: var(--surface); box-shadow: none; }
 .picture-tile { border-radius: 0; }
 @media (max-width: 620px) { .picture-grid { gap: 2px; } }
-@media (min-width: 1051px) {
-  .settings-view .setting-group { overflow: visible; border-inline: 0; border-radius: 0; }
-}
