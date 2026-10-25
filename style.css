@@ -131,18 +131,7 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 
-/* Let the photo tab use the width available to an Instagram-style profile grid. */
-@media (min-width: 1051px) {
-  .social-shell.picture-layout { grid-template-columns: 230px minmax(0, min(935px, calc(100vw - 510px))) 280px; }
-}
-@media (min-width: 821px) and (max-width: 1050px) {
-  .social-shell.picture-layout { grid-template-columns: 88px minmax(0, 640px) 260px; }
-}
-@media (min-width: 621px) and (max-width: 820px) {
-  .social-shell.picture-layout { grid-template-columns: 76px minmax(0, 640px); }
-}
-
-/* Keep the image grid flush to the content edge, without the calendar-style card frame. */
+/* Keep the shared page width while using Instagram-style image spacing. */
 .picture-grid { gap: 4px; margin: 0; overflow: visible; border: 0; border-radius: 0; background: var(--surface); box-shadow: none; }
 .picture-tile { border-radius: 0; }
 @media (max-width: 620px) { .picture-grid { gap: 2px; } }

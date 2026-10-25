@@ -269,7 +269,6 @@
 
     showView(view) {
       this.activeView = view;
-      this.root.querySelector('.social-shell')?.classList.toggle('picture-layout', view === 'picture');
       ['feed', 'picture', 'calendar', 'profile', 'settings'].forEach((name) => { document.getElementById(`${name}View`).hidden = name !== view; });
       this.els.mobileViewTitle.textContent = { feed: '일기', picture: '사진', calendar: '달력', profile: '프로필', settings: '설정' }[view];
       if (view === 'calendar') this.loadReferences();
