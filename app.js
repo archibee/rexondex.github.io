@@ -245,6 +245,14 @@
     }
 
     bind() {
+      this.root.addEventListener('click', (event) => {
+        const link = event.target.closest('a.post-permalink');
+        if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        const id = link.hash.match(/^#daily-(\d{6})$/)?.[1];
+        if (!id || !this.archive.idSet.has(id)) return;
+        event.preventDefault();
+        this.scrollToEntry(id, true);
+      });
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => this.showView(button.dataset.view)));
       document.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', () => this.store.moveMonth(Number(button.dataset.move))));
       document.querySelectorAll('[data-theme-id]').forEach((button) => button.addEventListener('click', () => { this.themes.apply(button.dataset.themeId); this.renderThemeState(); }));
@@ -332,7 +340,7 @@
       this.els.feedMore.textContent = '기록을 불러오는 중...';
       this.feedLoadPromise = Promise.all(ids.map(async (id) => {
         const entry = await this.repository.get(id), date = parseDiaryId(id);
-        return `<article class="diary-post" id="daily-${id}"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="#daily-${id}" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
+        return `<article class="diary-post" id="daily-${id}" aria-label="${escapeHtml(formatDate(date))} 일기"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="./archive.html#daily-${id}" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
       }));
       const posts = await this.feedLoadPromise;
       this.feedLoadPromise = null;

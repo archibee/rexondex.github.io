@@ -2,6 +2,29 @@
 
 HTML, CSS, JavaScript만 사용하는 정적 개인 일기장입니다.
 
+## 검색엔진 기본 설정
+
+기존 화면과 GitHub Pages의 `main` / `/(root)` 배포 방식을 유지합니다.
+
+- `index.html`: 설명, 대표 URL(canonical), 검색 허용, Open Graph·Twitter 공유 정보, WebSite·Person JSON-LD, 최근 8개 일기의 정적 HTML을 포함합니다.
+- `archive.html`: JavaScript 실행 없이 전체 일기와 참고 링크를 읽을 수 있는 정적 페이지입니다. 앱의 일기 링크도 이 페이지를 가리키며, 일반 클릭은 기존처럼 앱 안에서 이동합니다. 정적 스냅샷은 문단과 줄바꿈을 보존하는 텍스트 형태이며, 앱에서는 기존 Markdown 렌더링을 유지합니다.
+- `robots.txt`: 모든 크롤러의 접근을 허용하고 사이트맵 위치를 안내합니다.
+- `sitemap.xml`: 실제 HTML 페이지 두 개만 등록합니다. `#daily-…`는 페이지 내 위치이므로 별도 검색 문서로 등록하지 않습니다.
+- `favicon.svg`, `favicon.ico`, `favicon-96x96.png`, `apple-touch-icon.png`: 기존 로고의 SVG, 브라우저 호환용 ICO·PNG, 애플 홈 화면 아이콘입니다. SVG 로고를 바꾸면 래스터 아이콘도 함께 갱신해야 합니다.
+
+일기 파일 또는 `database.js`, 메타 태그를 수정한 뒤 아래 명령으로 정적 스냅샷을 갱신하고, 생성 파일도 함께 커밋합니다. 패키지 설치는 필요 없습니다. GitHub Pages에서 별도로 실행할 빌드는 없습니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
+git add index.html archive.html sitemap.xml
+```
+
+`ExecutionPolicy Bypass`는 위 명령의 PowerShell 프로세스에만 적용되며 시스템 정책을 변경하지 않습니다. 스크립트는 `database.js`에 등록된 일기만 포함하고, 원본 파일이 없거나 날짜가 잘못되면 실패합니다.
+
+대표 주소는 `https://rexondex.github.io/`입니다. 사용자 지정 도메인으로 변경할 경우 `index.html`의 canonical·공유 URL·JSON-LD, `robots.txt`, `scripts/update-seo.ps1`의 사이트맵 URL을 바꾸고 스냅샷을 다시 생성합니다.
+
+배포 후 필요하면 Google Search Console과 네이버 서치어드바이저에서 사이트 소유권을 확인하고 `https://rexondex.github.io/sitemap.xml`을 제출할 수 있습니다. 소유권 확인용 값은 계정별로 발급받아야 하므로 포함하지 않았습니다. 검색엔진의 실제 수집·색인·노출 여부는 각 검색엔진이 결정합니다.
+
 별도 프레임워크, 패키지 설치, 빌드 명령, 서버 코드와 사용자 정의 GitHub Actions가 없습니다. `main` 브랜치의 루트 디렉터리를 GitHub Pages로 게시하면 바로 동작합니다.
 
 ## 파일 구조
