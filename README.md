@@ -1,6 +1,6 @@
 # REXONDEX Archive
 
-HTML, CSS, JavaScript만 사용하는 GitHub Pages용 정적 일기장입니다. 사용자 정의 GitHub Actions, 패키지 설치, 서버, 배포 전 빌드가 필요하지 않습니다.
+HTML, CSS, JavaScript만 사용하는 GitHub Pages용 정적 일기장입니다. 사용자 정의 GitHub Actions, 패키지 설치, 서버가 필요하지 않습니다. 로컬 Git 커밋 훅이 완성된 정적 파일을 자동으로 준비합니다.
 
 ## 일기 등록
 
@@ -17,15 +17,14 @@ window.DIARY_FILES = [
 
 등록된 HTML은 일기 원본이면서 직접 열 수 있는 검색용 페이지입니다. 예: `https://rexondex.github.io/database/261029.html`. 피드와 달력도 같은 파일을 사용합니다. 목록 순서와 관계없이 최신 날짜순으로 표시하고 홈에서는 기존처럼 8개씩 불러옵니다. 전체 일기 화면도 목록에서 최신 내용을 읽습니다.
 
-새 일기는 기존 HTML 하나를 복사해서 작성하는 것이 편합니다. 파일명과 함께 다음 값을 해당 날짜에 맞게 수정합니다.
+새 일기는 본문만 작성해도 됩니다. 파일명 `261030.html`에서 날짜를 정하고, 첫 커밋 때 완성된 정적 HTML 문서로 자동 구성합니다. 기존 일기는 `.post-content` 안의 본문만 수정합니다. 제목·날짜·canonical·공유 메타 정보·구조화 데이터·전후 일기 링크는 자동 갱신되므로 직접 수정할 필요가 없습니다. 작성한 본문과 참고 링크는 보존합니다. 첫 문단이 날짜만 적힌 `<p>26.01.01</p>`이면 그 날짜도 파일명에 맞춰 갱신합니다.
 
-- `<title>`, description, canonical, Open Graph·Twitter 제목·설명·주소
-- JSON-LD의 글 주소·제목·작성일과 `mainEntityOfPage`
-- `<body data-diary-id="261030">`의 날짜 ID
-- 정적 본문의 날짜·`datetime`, 해당 글 링크와 전후 일기 링크
-- `.post-content` 안의 실제 일기 본문
+```html
+<p>오늘 작성한 일기입니다.</p>
+<p>다음 문단입니다.<br>같은 문단의 줄바꿈입니다.</p>
+```
 
-중첩 폴더의 HTML은 `<base href="../">`를 유지합니다. 개별 HTML에는 글 하나의 본문이 이미 들어 있으므로 JavaScript 없이도 읽을 수 있습니다. 앱은 그 HTML의 `.post-content`와 `.post-references`를 읽어 기존 피드 디자인으로 표시합니다.
+참고 링크를 함께 작성할 때는 아래처럼 본문과 구분합니다.
 
 본문은 Markdown 대신 HTML로 작성합니다.
 
@@ -69,13 +68,38 @@ window.PICTURE_SECTORS = [
 - `legacy-links.js`: `#daily-`로 시작하는 예전 링크는 특정 일기를 선택하지 않고 메인으로 이동합니다.
 - `.nojekyll`: GitHub Pages에서 파일을 그대로 게시합니다.
 
-새 HTML을 작성해 목록에 등록하는 것만으로 실제 페이지·피드·달력에 반영됩니다. 메인·전체 일기·사진의 **JavaScript 실행 전 스냅샷과 사이트맵까지 갱신하고 싶을 때만** 아래 선택 명령을 실행하고 변경된 파일을 함께 커밋합니다. 이 명령은 작성한 개별 일기 HTML을 수정하지 않습니다.
+## 커밋 시 SEO 자동 처리
+
+현재 로컬 저장소에는 설치되어 있습니다. 새 컴퓨터에서 clone한 경우 한 번만 실행합니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-hooks.ps1
+```
+
+그다음 평소처럼 작성·등록·커밋·푸시하면 됩니다.
+
+```powershell
+git add database/261030.html database.js
+git commit -m "261030 일기 추가"
+git push origin main
+```
+
+커밋 시 `.githooks/pre-commit`이 다음을 자동으로 생성하고 **같은 커밋에 포함**합니다.
+
+- 파일명에 맞는 날짜·제목·canonical·공유 정보·BlogPosting JSON-LD
+- 본문에서 추출한 설명, 개별 페이지의 정적 본문과 전후 일기 링크
+- 홈의 최근 8개 정적 본문, 전체 일기 정적 본문, 사진 정적 갤러리
+- HTML 페이지와 지원 이미지 주소가 포함된 사이트맵
+
+자동화는 커밋에 올린 내용만 사용합니다. 부분적으로 스테이징한 파일의 나머지 수정과 다른 미커밋 작업은 덮어쓰거나 커밋에 끌어오지 않습니다. 원본 HTML이 잘못되었거나 등록된 원본이 없으면 해당 커밋을 중단하고 이유를 표시합니다. `git add`에 새 원본과 목록을 함께 포함합니다.
+
+**로컬 Git 훅이므로 GitHub 웹 편집, 훅을 설치하지 않은 다른 컴퓨터, `git commit --no-verify`에서는 자동 실행되지 않습니다.** GitHub Pages 자체는 계속 완성된 파일을 그대로 게시합니다. 모든 작성 환경에서 서버 측으로 자동 처리하는 기능은 없습니다.
+
+수동 실행도 가능합니다.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 ```
-
-스냅샷을 갱신하지 않아도 새 HTML 주소는 즉시 열리고 앱의 링크를 통해 접근할 수 있습니다. 검색엔진에는 새 파일의 canonical과 본문이 제공됩니다. 다만 기존 스냅샷과 사이트맵에는 이전 목록이 남으므로 주기적인 갱신을 권장합니다.
 
 ## GitHub Pages 설정
 
@@ -97,7 +121,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 | 사진 목록·설명 / 사진 원본 | `pictures.js` / `picture/` |
 | 피드·달력·사진·설정 로직 | `app.js` |
 | 화면 디자인·색상 | `style.css`, `theme.css` |
-| 선택적인 스냅샷·사이트맵 갱신 | `scripts/update-seo.ps1` |
+| HTML·메타 정보·스냅샷·사이트맵 갱신 | `scripts/update-seo.ps1` |
+| 로컬 커밋 자동화 / 최초 설치 | `.githooks/pre-commit`, `scripts/seo-pre-commit.ps1` / `scripts/install-hooks.ps1` |
 | 선택적인 정적 링크 검사 | `scripts/test-seo.ps1` |
 
 로컬에서는 정적 HTTP 서버로 열면 됩니다. HTML 파일을 더블클릭하면 브라우저 보안 정책 때문에 피드의 `fetch`가 제한될 수 있습니다.

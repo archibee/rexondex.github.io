@@ -1,7 +1,8 @@
-﻿# Optional: refresh home/archive/gallery snapshots and sitemap from existing HTML diaries.
+﻿param([string]$SiteRoot = (Split-Path $PSScriptRoot -Parent))
+# Normalize registered HTML diaries and refresh static pages before committing.
 # No dependencies; compatible with Windows PowerShell 5.1 and PowerShell 7.
 $ErrorActionPreference = 'Stop'
-$siteRoot = Split-Path $PSScriptRoot -Parent
+$siteRoot = [IO.Path]::GetFullPath($SiteRoot)
 . (Join-Path $PSScriptRoot 'manifest.ps1')
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 function Read-SiteFile([string]$path) {
@@ -17,12 +18,16 @@ function Escape-Html([string]$value) { [System.Net.WebUtility]::HtmlEncode($valu
 $diaryFiles = Read-DiaryFiles (Read-SiteFile 'database.js')
 $ids = @($diaryFiles.Keys | Sort-Object -Descending)
 if (!$ids.Count) { throw 'No diary IDs found in database.js.' }
-# The HTML diary is the source and the public search page. Never rewrite it here.
-$posts = foreach ($id in $ids) {
-    $html = Read-SiteFile "database/$($diaryFiles[$id])"
-    $article = [regex]::Match($html, '(?s)<article\b.*?</article>').Value
-    if (!$article -or !$article.Contains('class="post-content"')) { throw "Missing diary article in $($diaryFiles[$id])." }
-    $article
+function Read-DiarySection([string]$html, [string]$className) {
+    $opening = [regex]::Match($html, '(?is)<div\b(?=[^>]*\bclass\s*=\s*["''][^"'']*\b' + $className + '\b[^"'']*["''])[^>]*>')
+    if (!$opening.Success) { return $null }
+    $start = $opening.Index + $opening.Length
+    $depth = 1
+    foreach ($tag in [regex]::Matches($html.Substring($start), '(?is)<div\b[^>]*>|</div\s*>')) {
+        if ($tag.Value -match '^</') { $depth-- } else { $depth++ }
+        if ($depth -eq 0) { return $html.Substring($start, $tag.Index) }
+    }
+    throw "Unclosed $className div."
 }
 
 function Render-Shell([string]$heading, [string]$body, [string]$navigation) {
@@ -79,6 +84,53 @@ function Render-Page([string]$path, [string]$title, [string]$description, [strin
     }
     $noscript = '<noscript><p>달력과 테마 설정은 JavaScript를 활성화하면 사용할 수 있습니다. <a href="./">메인</a> · <a href="./archive.html">전체 일기</a> · <a href="./pictures.html">사진</a></p></noscript>'
     Write-SiteFile $path "<!doctype html>`n<html lang=""ko"">`n<head>`n$base$head`n<script type=""application/ld+json"">$json</script>`n$scripts`n</head>`n<body $attributes><div id=""app"">`n<!-- STATIC-ARCHIVE:START -->`n$body`n<!-- STATIC-ARCHIVE:END -->`n</div>$noscript</body>`n</html>`n"
+}
+
+$culture = [Globalization.CultureInfo]::GetCultureInfo('ko-KR')
+$posts = for ($i = 0; $i -lt $ids.Count; $i++) {
+    $id = $ids[$i]
+    $path = "database/$($diaryFiles[$id])"
+    $html = Read-SiteFile $path
+    $content = Read-DiarySection $html 'post-content'
+    $references = Read-DiarySection $html 'post-references'
+    if ($null -eq $content) {
+        if ($html -match '(?i)<(?:html|head|body)\b|<!doctype') { throw "Missing .post-content in $path" }
+        $content = $html.Trim()
+    }
+    $date = [datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+    $iso = $date.ToString('yyyy-MM-dd')
+    $label = $date.ToString('yyyy년 M월 d일', $culture)
+    $longLabel = Escape-Html ($date.ToString('D', $culture))
+    $shortDate = $date.ToString('yy.MM.dd')
+    # Only a leading date-only paragraph is normalized; prose dates are preserved.
+    $content = [regex]::Replace($content, '^\s*<p>\s*\d{2}\.\d{2}\.\d{2}\s*</p>', "<p>$shortDate</p>")
+    $summary = [regex]::Replace($content, '(?is)<(?:script|style)\b.*?</(?:script|style)>', '')
+    $summary = [Net.WebUtility]::HtmlDecode([regex]::Replace($summary, '<[^>]+>', ' '))
+    $summary = [regex]::Replace($summary, '\s+', ' ').Trim()
+    $summary = [regex]::Replace($summary, '^\d{2}\.\d{2}\.\d{2}\s*', '')
+    if ($summary.Length -gt 150) { $summary = $summary.Substring(0, 150) + '…' }
+    $description = "$label 일기. $summary"
+    $referenceHtml = if ($null -ne $references) { '<div class="post-references" aria-label="참고 링크">' + $references + '</div>' } else { '' }
+    $post = @"
+<article class="diary-post" id="daily-$id" aria-label="$longLabel">
+  <header><img class="post-avatar" src="./rexondex.jpg" alt="" width="44" height="44" loading="lazy"><div><strong>rexondex</strong><time datetime="$iso">$longLabel</time></div></header>
+  $referenceHtml
+  <div class="post-content">$content</div>
+  <footer><a class="post-permalink" href="./$path">$id &#183; &#47553;&#53356;</a></footer>
+</article>
+"@
+    $navigation = '<a href="./">메인</a> · <a href="./archive.html">전체 일기</a>'
+    if ($i -gt 0) { $navigation += " · <a href=""./database/$($diaryFiles[$ids[$i - 1]])"">다음 일기</a>" }
+    if ($i -lt $ids.Count - 1) { $navigation += " · <a href=""./database/$($diaryFiles[$ids[$i + 1]])"">이전 일기</a>" }
+    $entity = [ordered]@{
+        '@type' = 'BlogPosting'; '@id' = "$siteUrl$path#article"
+        headline = "$label 일기"; description = $description; datePublished = $iso
+        inLanguage = 'ko'; author = [ordered]@{ '@id' = "$($siteUrl)#author" }
+        mainEntityOfPage = "$siteUrl$path"
+    }
+    $body = Render-Shell "$label 일기" $post $navigation
+    Render-Page $path "$label 일기 | rexondex Archive" $description $body $true "data-diary-id=""$id""" $entity
+    $post
 }
 
 $homeDescription = 'rexondex의 일기와 사진을 모은 개인 디지털 아카이브입니다. 일상의 기록과 참고 링크를 달력으로 탐색할 수 있습니다.'
