@@ -2,6 +2,7 @@
 window.PICTURE_SECTORS = [
     {
         "id":  "sector-1",
+        "descriptions": {},
         "files":  [
                       "18487219738006127.jpg",
                       "18410915773188616.jpg",

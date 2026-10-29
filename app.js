@@ -184,8 +184,9 @@
   class ArchiveApp {
     constructor(deps) {
       Object.assign(this, deps);
-      this.activeView = 'feed';
-      this.feedIds = [...this.archive.ids].reverse();
+      this.entryId = document.body.dataset.diaryId || '';
+      this.activeView = document.body.dataset.initialView || 'feed';
+      this.feedIds = this.entryId ? [this.entryId] : [...this.archive.ids].reverse();
       this.feedCursor = 0;
       this.pageSize = 8;
       this.referencesLoaded = false;
@@ -193,22 +194,31 @@
         .filter((sector) => sector && /^[a-z0-9-]+$/i.test(String(sector.id)) && Array.isArray(sector.files))
         .map((sector) => ({
           id: String(sector.id),
+          descriptions: sector.descriptions || {},
           files: [...new Set(sector.files.map(String).filter((file) => /^[^/\\]+\.(jpe?g|png|webp|gif|avif|heic)$/i.test(file)))].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
         }))
         .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
-      this.activePictureSector = this.pictureSectors[0]?.id || '';
+      this.activePictureSector = document.body.dataset.pictureSector || this.pictureSectors[0]?.id || '';
     }
 
     mount() {
+      this.entryNavigation = this.entryId ? this.root.querySelector('section > footer')?.innerHTML : '';
       this.root.innerHTML = this.shell();
       this.els = Object.fromEntries(['feedView', 'pictureView', 'pictureSectorNav', 'pictureCount', 'pictureGrid', 'pictureEmpty', 'pictureDialog', 'pictureDialogImage', 'pictureDialogSector', 'pictureDialogName', 'pictureDialogSize', 'pictureDialogOriginal', 'pictureDialogClose', 'feedList', 'feedMore', 'calendarView', 'profileView', 'settingsView', 'yearNav', 'monthNav', 'calendar', 'calendarTitle', 'monthMeta', 'mobileViewTitle'].map((id) => [id, document.getElementById(id)]));
-      this.bind(); this.renderPictureSectors(); this.renderCalendar(); this.renderYears(); this.renderMonths(); this.renderNextFeedPage(); this.openHashEntry();
+      this.bind(); this.renderPictureSectors(); this.renderCalendar(); this.renderYears(); this.renderMonths();
+      if (this.activeView === 'feed') this.renderNextFeedPage();
+      this.showView(this.activeView);
+      if (this.entryId) document.getElementById('feedTitle').textContent = `${formatDate(parseDiaryId(this.entryId), false)} 일기`;
     }
 
     navItems() {
       return [
         ['feed', '일기', 'feed'], ['picture', '사진', 'picture'], ['calendar', '달력', 'calendar'], ['profile', '프로필', 'user'], ['settings', '설정', 'settings']
-      ].map(([view, label, icon]) => `<button type="button" data-view="${view}" aria-label="${label}">${svg(icon)}<span>${label}</span></button>`).join('');
+      ].map(([view, label, icon]) => {
+        const content = `${svg(icon)}<span>${label}</span>`;
+        if (view === 'feed' || view === 'picture') return `<a href="${view === 'feed' ? './' : './pictures.html'}" data-view="${view}" aria-label="${label}">${content}</a>`;
+        return `<button type="button" data-view="${view}" aria-label="${label}">${content}</button>`;
+      }).join('');
     }
 
     shell() {
@@ -217,7 +227,7 @@
       <header class="mobile-header"><a href="./">${brandLogo}<span>rexondex</span></a><span id="mobileViewTitle" aria-live="polite">일기</span></header>
       <aside class="side-nav"><a class="wordmark" href="./">${brandLogo}<span>rexondex</span><small>archive</small></a><nav aria-label="주요 메뉴">${this.navItems()}</nav><p>${this.archive.ids.length}개의 기록</p></aside>
       <main class="main-column">
-        <section class="view feed-view" id="feedView" aria-labelledby="feedTitle"><header class="view-header"><h1 id="feedTitle">일기</h1></header><div id="feedList"></div><button class="feed-more" id="feedMore" type="button">이전 기록 더 보기</button></section>
+        <section class="view feed-view" id="feedView" aria-labelledby="feedTitle"><header class="view-header"><h1 id="feedTitle">일기</h1></header><div id="feedList"></div><button class="feed-more" id="feedMore" type="button">이전 기록 더 보기</button><footer class="diary-post">${this.entryNavigation || '<a href="./archive.html">전체 일기 보기</a>'}</footer></section>
         <section class="view picture-view" id="pictureView" aria-labelledby="pictureTitle" hidden>
           <header class="view-header"><h1 id="pictureTitle">사진</h1></header>
           <div class="picture-toolbar"><nav class="picture-sector-nav" id="pictureSectorNav" aria-label="사진 섹터"></nav><span class="picture-count" id="pictureCount"></span></div>
@@ -245,27 +255,16 @@
     }
 
     bind() {
-      this.root.addEventListener('click', (event) => {
-        const link = event.target.closest('a.post-permalink');
-        if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-        const id = link.hash.match(/^#daily-(\d{6})$/)?.[1];
-        if (!id || !this.archive.idSet.has(id)) return;
-        event.preventDefault();
-        this.scrollToEntry(id, true);
-      });
-      document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => this.showView(button.dataset.view)));
+      document.querySelectorAll('button[data-view]').forEach((button) => button.addEventListener('click', () => this.showView(button.dataset.view)));
       document.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', () => this.store.moveMonth(Number(button.dataset.move))));
       document.querySelectorAll('[data-theme-id]').forEach((button) => button.addEventListener('click', () => { this.themes.apply(button.dataset.themeId); this.renderThemeState(); }));
       this.els.feedMore.addEventListener('click', () => this.renderNextFeedPage());
-      this.els.pictureSectorNav.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-picture-sector]');
-        if (!button) return;
-        this.activePictureSector = button.dataset.pictureSector;
-        this.renderPictureSectors();
-      });
       this.els.pictureGrid.addEventListener('click', (event) => {
         const button = event.target.closest('[data-picture-index]');
-        if (button) this.openPicture(Number(button.dataset.pictureIndex));
+        if (button && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+          event.preventDefault();
+          this.openPicture(Number(button.dataset.pictureIndex));
+        }
       });
       this.els.pictureDialogClose.addEventListener('click', () => this.els.pictureDialog.close());
       this.els.pictureDialog.addEventListener('click', (event) => { if (event.target === this.els.pictureDialog) this.els.pictureDialog.close(); });
@@ -279,8 +278,6 @@
         this.els.pictureDialogSize.textContent = `미리보기를 지원하지 않을 수 있습니다 · ${format}`;
       });
       this.store.addEventListener('change', () => { this.renderYears(); this.renderMonths(); this.renderCalendar(); });
-      this.els.calendar.addEventListener('click', (event) => { const button = event.target.closest('[data-entry]'); if (button) this.scrollToEntry(button.dataset.entry, true); });
-      window.addEventListener('hashchange', () => this.openHashEntry());
       this.renderNavState(); this.renderThemeState();
     }
 
@@ -296,7 +293,7 @@
 
     picturePath(sector, file) { return `./picture/${encodeURIComponent(sector)}/${encodeURIComponent(file)}`; }
     renderPictureSectors() {
-      this.els.pictureSectorNav.innerHTML = this.pictureSectors.map((sector) => `<button type="button" data-picture-sector="${escapeHtml(sector.id)}" class="${sector.id === this.activePictureSector ? 'active' : ''}" aria-pressed="${sector.id === this.activePictureSector}">${escapeHtml(sector.id)}<small>${sector.files.length}</small></button>`).join('');
+      this.els.pictureSectorNav.innerHTML = this.pictureSectors.map((sector, index) => `<a href="${index === 0 ? './pictures.html' : `./pictures/${encodeURIComponent(sector.id)}.html`}" class="${sector.id === this.activePictureSector ? 'active' : ''}" ${sector.id === this.activePictureSector ? 'aria-current="page"' : ''}>${escapeHtml(sector.id)}<small>${sector.files.length}</small></a>`).join('');
       this.renderPictures();
     }
     renderPictures() {
@@ -309,7 +306,7 @@
       }
       this.els.pictureCount.textContent = `${sector.files.length}장`;
       this.els.pictureEmpty.hidden = sector.files.length > 0;
-      this.els.pictureGrid.innerHTML = sector.files.map((file, index) => `<button type="button" class="picture-tile" data-picture-index="${index}" aria-label="${escapeHtml(`${sector.id}/${file} 사진 크게 보기`)}"><img src="${escapeHtml(this.picturePath(sector.id, file))}" alt="" loading="lazy" decoding="async"></button>`).join('');
+      this.els.pictureGrid.innerHTML = sector.files.map((file, index) => `<a href="${escapeHtml(this.picturePath(sector.id, file))}" class="picture-tile" data-picture-index="${index}" aria-label="${escapeHtml(sector.descriptions[file] || `${sector.id}/${file} 사진 크게 보기`)}"><img src="${escapeHtml(this.picturePath(sector.id, file))}" alt="${escapeHtml(sector.descriptions[file] || '')}" loading="lazy" decoding="async"></a>`).join('');
       this.els.pictureGrid.querySelectorAll('img').forEach((image) => image.addEventListener('error', () => {
         const fallback = document.createElement('span');
         fallback.className = 'picture-tile-fallback';
@@ -327,20 +324,20 @@
       this.els.pictureDialogName.textContent = file;
       this.els.pictureDialogSize.textContent = '이미지 정보를 불러오는 중';
       this.els.pictureDialogOriginal.href = source;
-      image.alt = `${sector.id}/${file}`;
+      image.alt = sector.descriptions[file] || '';
       image.src = source;
       if (!this.els.pictureDialog.open) this.els.pictureDialog.showModal();
     }
 
     async renderNextFeedPage() {
       if (this.feedLoadPromise) return this.feedLoadPromise;
-      if (this.feedCursor >= this.feedIds.length) return;
+      if (this.feedCursor >= this.feedIds.length) { this.els.feedMore.hidden = true; return; }
       const ids = this.feedIds.slice(this.feedCursor, this.feedCursor + this.pageSize);
       this.els.feedMore.disabled = true;
       this.els.feedMore.textContent = '기록을 불러오는 중...';
       this.feedLoadPromise = Promise.all(ids.map(async (id) => {
         const entry = await this.repository.get(id), date = parseDiaryId(id);
-        return `<article class="diary-post" id="daily-${id}" aria-label="${escapeHtml(formatDate(date))} 일기"><header><img class="post-avatar" src="./rexondex.jpg" alt=""><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="./archive.html#daily-${id}" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
+        return `<article class="diary-post" id="daily-${id}" aria-label="${escapeHtml(formatDate(date))} 일기"><header><img class="post-avatar" src="./rexondex.jpg" alt="" width="44" height="44"><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="./diary/${id}.html" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
       }));
       const posts = await this.feedLoadPromise;
       this.feedLoadPromise = null;
@@ -357,25 +354,12 @@
       this.store.setReferences(await this.repository.findReferenceIds(this.archive.ids));
     }
 
-    openHashEntry() {
-      const match = window.location.hash.match(/^#daily-(\d{6})$/);
-      if (match && this.archive.idSet.has(match[1])) this.scrollToEntry(match[1]);
-    }
-
-    async scrollToEntry(id, updateUrl = false) {
-      if (!this.archive.idSet.has(id)) return;
-      if (updateUrl && window.location.hash !== `#daily-${id}`) window.history.pushState(null, '', `#daily-${id}`);
-      if (this.activeView !== 'feed') this.showView('feed');
-      const targetIndex = this.feedIds.indexOf(id);
-      while (this.feedCursor <= targetIndex) await this.renderNextFeedPage();
-      document.getElementById(`daily-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
     renderYears() { this.els.yearNav.innerHTML = this.archive.years.map((year) => `<button class="${year === this.store.state.year ? 'active' : ''}" data-year="${year}">${year}<small>${this.archive.count(year)}</small></button>`).join(''); this.els.yearNav.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => this.store.view(Number(button.dataset.year), this.store.state.month))); }
     renderMonths() { this.els.monthNav.innerHTML = Array.from({ length: 12 }, (_, month) => `<button class="${month === this.store.state.month ? 'active' : ''}" data-month="${month}">${month + 1}월</button>`).join(''); this.els.monthNav.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => this.store.view(this.store.state.year, Number(button.dataset.month)))); }
     renderCalendar() {
       const { year, month, referenceIds } = this.store.state, first = new Date(year, month, 1), start = new Date(year, month, 1 - ((first.getDay() + 6) % 7));
       this.els.calendarTitle.textContent = `${year}년 ${month + 1}월`; this.els.monthMeta.textContent = `${this.archive.count(year, month)}개의 기록`;
-      this.els.calendar.innerHTML = Array.from({ length: 42 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); const id = dateToDiaryId(date), has = this.archive.idSet.has(id); return `<div class="day ${date.getMonth() !== month ? 'outside' : ''}">${has ? `<button data-entry="${id}" class="has-entry ${referenceIds.has(id) ? 'has-reference' : ''}" aria-label="${escapeHtml(formatDate(date))} 기록으로 이동"><span>${date.getDate()}</span></button>` : `<span>${date.getDate()}</span>`}</div>`; }).join('');
+      this.els.calendar.innerHTML = Array.from({ length: 42 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); const id = dateToDiaryId(date), has = this.archive.idSet.has(id); return `<div class="day ${date.getMonth() !== month ? 'outside' : ''}">${has ? `<a href="./diary/${id}.html" data-entry="${id}" class="has-entry ${referenceIds.has(id) ? 'has-reference' : ''}" aria-label="${escapeHtml(formatDate(date))} 기록으로 이동"><span>${date.getDate()}</span></a>` : `<span>${date.getDate()}</span>`}</div>`; }).join('');
     }
   }
 

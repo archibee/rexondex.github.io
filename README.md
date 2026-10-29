@@ -4,32 +4,45 @@ HTML, CSS, JavaScript만 사용하는 정적 개인 일기장입니다.
 
 별도 프레임워크, 패키지 설치, 서버 코드와 사용자 정의 GitHub Actions가 없습니다. `main` 브랜치의 루트 디렉터리를 GitHub Pages로 게시하면 동작합니다. 일반 일기 화면은 브라우저에서 `database.js`와 `database/YYMMDD.md`를 읽어 구성하며, 실행에 사전 빌드는 필요하지 않습니다.
 
-## 검색엔진 기본 설정
+## 검색엔진 설정과 주소
 
-기존 화면과 GitHub Pages의 `main` / `/(root)` 배포 방식을 유지합니다.
+GitHub Pages의 `main` / `/(root)` 배포와 기존 피드·달력·사진·테마 디자인을 유지합니다. 홈 피드는 기존처럼 Markdown 일기를 최신순으로 8개씩 불러옵니다.
 
-일반 방문자가 보는 일기·사진·달력·프로필·설정 화면과 일기 8개씩 불러오는 동작은 유지됩니다. 검색 결과용 설명과 링크 공유 미리보기, 브라우저·홈 화면 아이콘 정보가 추가되었습니다. 일기의 `날짜 · 링크`를 일반 클릭하면 기존처럼 앱 안에서 이동하지만, 링크 주소 복사나 새 탭 열기는 `archive.html#daily-YYMMDD`를 사용하므로 정적 전체 일기 페이지로 연결됩니다.
+- `index.html`: 최근 8개 일기 본문과 개별 일기 링크를 정적 HTML로 제공합니다.
+- `diary/YYMMDD.html`: 날짜별 독립 주소입니다. 같은 앱 디자인으로 해당 일기 하나를 표시하고, 전후 일기·전체 일기·메인으로 연결합니다. 초기 HTML에 본문, 날짜별 제목·요약, 자기 자신을 가리키는 canonical, Open Graph·Twitter 정보와 BlogPosting JSON-LD가 있습니다. JavaScript로 canonical을 바꾸지 않습니다.
+- `archive.html`: JavaScript 없이 전체 일기와 개별 일기 링크를 읽을 수 있습니다. 더 보기 버튼을 누르지 않는 크롤러도 모든 일기를 찾을 수 있도록 앱에서도 이 페이지로 연결합니다.
+- `pictures.html`: 첫 사진 섹터의 정적 갤러리입니다. 추가 섹터는 `pictures/sector-ID.html` 주소를 사용합니다. 원본 링크가 있는 `<img>` 목록을 제공하며, JavaScript가 있으면 기존 모달로 확대합니다.
+- `sitemap.xml`: 홈·전체 일기·모든 개별 일기·사진 갤러리의 실제 주소와 지원되는 이미지 URL을 등록합니다. 이미지 검색에서 지원하지 않는 HEIC는 이미지 사이트맵에서 제외하지만 갤러리와 원본 링크는 유지합니다.
+- `robots.txt`: 크롤러 접근을 허용하고 사이트맵을 안내합니다.
+- `legacy-links.js`: `/#daily-261025`, `/index.html#daily-…`, `/archive.html#daily-…`처럼 **`#daily-`로 시작하는 예전 링크는 날짜·뒤 문자열과 관계없이 메인 `/`로 이동**합니다. 예전 일기 위치는 복원하지 않습니다. 해시는 서버로 전송되지 않으므로 HTTP 301이 아닌 브라우저의 `location.replace`로 처리합니다. JavaScript를 끈 환경에서는 해당 HTML 페이지가 열립니다.
 
-- `index.html`: 설명, 대표 URL(canonical), 검색 허용, Open Graph·Twitter 공유 정보, WebSite·Person JSON-LD, 최근 8개 일기의 정적 HTML을 포함합니다.
-- `archive.html`: JavaScript 실행 없이 전체 일기와 참고 링크를 읽을 수 있는 정적 페이지입니다. 앱의 일기 링크도 이 페이지를 가리키며, 일반 클릭은 기존처럼 앱 안에서 이동합니다. 정적 스냅샷은 문단과 줄바꿈을 보존하는 텍스트 형태이며, 앱에서는 기존 Markdown 렌더링을 유지합니다.
-- `robots.txt`: 모든 크롤러의 접근을 허용하고 사이트맵 위치를 안내합니다.
-- `sitemap.xml`: 실제 HTML 페이지 두 개만 등록합니다. `#daily-…`는 페이지 내 위치이므로 별도 검색 문서로 등록하지 않습니다.
-- `favicon.svg`, `favicon.ico`, `favicon-96x96.png`, `apple-touch-icon.png`: 기존 로고의 SVG, 브라우저 호환용 ICO·PNG, 애플 홈 화면 아이콘입니다. SVG 로고를 바꾸면 래스터 아이콘도 함께 갱신해야 합니다.
+새로 공유할 일기 주소는 `https://rexondex.github.io/diary/261025.html` 형식입니다. 피드의 날짜 링크와 달력의 기록도 실제 개별 주소를 가리킵니다. 새 탭 열기·주소 복사·뒤로 가기를 브라우저 기본 방식으로 지원합니다. 달력의 연도·월 선택과 참고 링크 표시 로직은 유지합니다.
 
-SEO 작업으로 추가된 관리 작업은 정적 스냅샷 갱신입니다. 새 `.md` 파일과 `database.js`만 게시해도 JavaScript로 동작하는 일반 일기 화면에는 반영됩니다. 다만 `index.html`의 초기 본문과 `archive.html`은 생성 당시 내용이므로, 일기 추가·수정 후 아래 명령을 실행하고 생성 파일도 함께 게시해야 해당 정적 내용까지 최신 상태가 됩니다. 갱신하지 않으면 정적 페이지에는 이전 내용이 남고, 새 일기의 정적 링크에는 해당 위치가 없을 수 있습니다.
+사진 설명은 `pictures.js`의 섹터별 `descriptions`에 실제 사진을 보고 작성합니다. 파일명이나 추정 내용으로 대체 텍스트를 꾸며내지 않습니다. 입력한 설명은 썸네일과 모달의 `alt`, 링크 이름에 반영됩니다.
 
-이 명령은 로컬에서 수동 실행합니다. 앱 실행이나 GitHub Pages 배포 시 자동 실행되지 않으며, 패키지 설치도 필요 없습니다. `index.html`의 메타 태그를 수정했을 때도 다시 실행하면 `archive.html`에 반영됩니다.
+```js
+"descriptions": {
+  "실제-사진파일.jpg": "사진에 실제로 보이는 장소와 장면 설명"
+}
+```
+
+### 일기·사진을 변경한 후
+
+원본과 목록 수정 후 아래 명령으로 검색용 HTML을 다시 생성하고, 생성 파일도 함께 게시합니다. 패키지 설치나 서버 빌드는 필요 없습니다. PowerShell 5.1 또는 7에서 실행할 수 있습니다.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
-git add index.html archive.html sitemap.xml
+powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-seo.ps1
+git add index.html archive.html diary pictures.html sitemap.xml
 ```
 
-`ExecutionPolicy Bypass`는 위 명령의 PowerShell 프로세스에만 적용되며 시스템 정책을 변경하지 않습니다. 스크립트는 `database.js`에 등록된 일기만 포함하고, 원본 파일이 없거나 날짜가 잘못되면 실패합니다.
+두 번째 사진 섹터부터는 `pictures/` 폴더도 생성되므로 함께 커밋합니다. `ExecutionPolicy Bypass`는 해당 명령의 PowerShell 프로세스에만 적용됩니다. 이 갱신은 GitHub Pages가 자동 실행하지 않습니다. 특히 개별 일기 링크는 실제 HTML 파일이 필요하므로 **게시 전에 반드시 생성**해야 합니다. 생성 파일의 직접 편집 대신 원본을 수정하고 다시 생성합니다.
 
-대표 주소는 `https://rexondex.github.io/`입니다. 사용자 지정 도메인으로 변경할 경우 `index.html`의 canonical·공유 URL·JSON-LD, `robots.txt`, `scripts/update-seo.ps1`의 사이트맵 URL을 바꾸고 스냅샷을 다시 생성합니다.
+정적 일기 본문은 문단·줄바꿈을 보존한 텍스트이며 앱에서는 기존 marked Markdown 렌더링을 사용합니다. marked는 버전을 고정했습니다. 사이트에 없는 글이나 사진 설명은 SEO를 위해 추가하지 않습니다.
 
-배포 후 필요하면 Google Search Console과 네이버 서치어드바이저에서 사이트 소유권을 확인하고 `https://rexondex.github.io/sitemap.xml`을 제출할 수 있습니다. 소유권 확인용 값은 계정별로 발급받아야 하므로 포함하지 않았습니다. 검색엔진의 실제 수집·색인·노출 여부는 각 검색엔진이 결정합니다.
+대표 주소를 바꾸면 `index.html`의 canonical·공유 URL·WebSite/Person JSON-LD와 `robots.txt`를 수정하고 다시 생성합니다. 개별 페이지 주소와 사이트맵은 홈 canonical을 기준으로 생성합니다.
+
+배포 후 Google Search Console에서 소유권을 확인하고 `https://rexondex.github.io/sitemap.xml`을 제출합니다. 소유권 확인 값은 계정별 발급이 필요하며 저장소에는 포함하지 않았습니다. 실제 수집·색인·순위는 검색엔진이 결정합니다.
 
 ## 파일 구조
 
@@ -37,6 +50,10 @@ git add index.html archive.html sitemap.xml
 rexondex.github.io/
 ├─ index.html                         페이지 진입점, 메타 태그, 최근 일기 정적 스냅샷
 ├─ archive.html                       전체 일기 정적 스냅샷
+├─ diary/                             날짜별 독립 HTML 페이지
+├─ pictures.html                      사진 정적 갤러리
+├─ legacy-links.js                    예전 해시 링크를 메인으로 연결
+├─ theme-init.js                      첫 화면 테마 설정
 ├─ app.js                             전체 화면과 일기 로직
 ├─ database.js                        표시할 일기 날짜 ID 목록(.md 제외)
 ├─ database/                          Markdown 원본 일기
@@ -54,7 +71,8 @@ rexondex.github.io/
 ├─ apple-touch-icon.png                애플 홈 화면 아이콘
 ├─ robots.txt                         크롤러 접근 및 사이트맵 안내
 ├─ sitemap.xml                        검색엔진용 HTML 페이지 목록
-├─ scripts/update-seo.ps1              일기 정적 스냅샷·사이트맵 갱신
+├─ scripts/update-seo.ps1              일기·사진 정적 HTML·사이트맵 갱신
+├─ scripts/test-seo.ps1                메타 정보·사이트맵·내부 링크 검사
 └─ README.md
 ```
 
@@ -102,7 +120,7 @@ window.DIARY_FILES = [
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
-git add database/260807.md database.js index.html archive.html sitemap.xml
+git add database/260807.md database.js index.html archive.html diary pictures.html sitemap.xml
 git commit -m "260807 일기 추가"
 git push origin main
 ```
@@ -191,6 +209,6 @@ index.html
   └─ 달력에서 연도·월별 기록 탐색
 ```
 
-달력의 과거 기록을 누르면 해당 기록이 포함된 묶음까지 자동으로 불러옵니다. 앱 실행 중에는 `.md` 원본을 요청하며 정적 스냅샷 갱신 스크립트를 실행하지 않습니다.
+달력의 기록을 누르면 같은 디자인의 개별 일기 주소로 이동합니다. 앱 실행 중에는 `.md` 원본을 요청하며 정적 스냅샷 갱신 스크립트를 실행하지 않습니다.
 
-JavaScript가 꺼져 있으면 `index.html`의 정적 본문이 유지되며, 전체 일기 링크를 통해 `archive.html`을 읽을 수 있습니다. 이 경우 달력·사진 갤러리·테마 설정 등 앱 기능은 실행되지 않습니다.
+JavaScript가 꺼져 있으면 `index.html`의 정적 본문이 유지되며, 전체 일기 링크를 통해 `archive.html`을 읽을 수 있습니다. 이 경우 정적 사진 갤러리와 원본 링크도 사용할 수 있지만 달력·모달·테마 설정 등 앱 기능은 실행되지 않습니다.
