@@ -1,8 +1,10 @@
-// GitHub Pages does not expose folder listings. Add each sector folder and its image filenames here.
+// File lists are generated from picture/sector folders. Photo descriptions are preserved.
 window.PICTURE_SECTORS = [
     {
         "id":  "sector-1",
-        "descriptions": {},
+        "descriptions":  {
+
+                         },
         "files":  [
                       "18487219738006127.jpg",
                       "18410915773188616.jpg",

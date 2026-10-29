@@ -1,5 +1,5 @@
+// Generated from database/ by scripts/update-seo.ps1. Add HTML files to the folder.
 window.DIARY_FILES = [
-  // HTML 파일명을 확장자와 함께 등록하세요: '261030.html'
   '260606.html',
   '260607.html',
   '260608.html',
@@ -72,6 +72,4 @@ window.DIARY_FILES = [
   '261018.html',
   '261025.html',
   '261029.html',
-
-
 ];

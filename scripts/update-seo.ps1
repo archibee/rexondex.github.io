@@ -1,5 +1,5 @@
 ﻿param([string]$SiteRoot = (Split-Path $PSScriptRoot -Parent))
-# Normalize registered HTML diaries and refresh static pages before committing.
+# Scan source folders, synchronize lists, and refresh the complete static site.
 # No dependencies; compatible with Windows PowerShell 5.1 and PowerShell 7.
 $ErrorActionPreference = 'Stop'
 $siteRoot = [IO.Path]::GetFullPath($SiteRoot)
@@ -15,9 +15,46 @@ function Write-SiteFile([string]$path, [string]$content) {
 }
 function Escape-Html([string]$value) { [System.Net.WebUtility]::HtmlEncode($value) }
 
-$diaryFiles = Read-DiaryFiles (Read-SiteFile 'database.js')
+$diaryFiles = @{}
+foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $siteRoot 'database') -File)) {
+    if ($file.Name -notmatch '^([0-9]{6})\.html$') { continue }
+    $id = $Matches[1]
+    [void][datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+    $diaryFiles[$id] = $file.Name
+}
 $ids = @($diaryFiles.Keys | Sort-Object -Descending)
-if (!$ids.Count) { throw 'No diary IDs found in database.js.' }
+if (!$ids.Count) { throw 'No YYMMDD.html diary files found in database/.' }
+
+# Preserve manually written photo descriptions while discovering files on disk.
+$previousSectors = @{}
+if (Test-Path -LiteralPath (Join-Path $siteRoot 'pictures.js')) {
+    foreach ($sector in @(Read-ManifestArray (Read-SiteFile 'pictures.js') 'PICTURE_SECTORS')) { $previousSectors[$sector.id] = $sector }
+}
+$imagePattern = '^[^/\\]+\.(jpe?g|png|webp|gif|avif|heic)$'
+$pictureRoot = Join-Path $siteRoot 'picture'
+if (!(Test-Path -LiteralPath $pictureRoot)) { [void][IO.Directory]::CreateDirectory($pictureRoot) }
+if (Get-ChildItem -LiteralPath $pictureRoot -File | Where-Object { $_.Name -match $imagePattern }) {
+    throw 'Place photos inside a sector folder, for example picture/sector-1/photo.jpg.'
+}
+$discoveredSectors = @(foreach ($folder in (Get-ChildItem -LiteralPath $pictureRoot -Directory | Sort-Object { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })) {
+    $files = @(Get-ChildItem -LiteralPath $folder.FullName -File | Where-Object { $_.Name -match $imagePattern } | Sort-Object { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(30, '0') }) } -Descending | ForEach-Object { $_.Name })
+    if ($folder.Name -notmatch '^[a-zA-Z0-9-]+$') {
+        if ($files.Count) { throw "Photo sector names must use letters, numbers or hyphens: $($folder.Name)" }
+        continue
+    }
+    $descriptions = [ordered]@{}
+    $previous = $previousSectors[$folder.Name]
+    if ($previous -and $previous.descriptions) {
+        foreach ($property in ($previous.descriptions.PSObject.Properties | Sort-Object Name)) {
+            if ($files -contains $property.Name) { $descriptions[$property.Name] = $property.Value }
+        }
+    }
+    [ordered]@{ id = $folder.Name; descriptions = $descriptions; files = $files }
+})
+$listing = @($ids | Sort-Object | ForEach-Object { "  '$($diaryFiles[$_])'," }) -join "`n"
+Write-SiteFile 'database.js' ("// Generated from database/ by scripts/update-seo.ps1. Add HTML files to the folder.`nwindow.DIARY_FILES = [`n$listing`n];`n")
+$pictureJson = ConvertTo-Json -InputObject $discoveredSectors -Depth 8
+Write-SiteFile 'pictures.js' ("// File lists are generated from picture/sector folders. Photo descriptions are preserved.`nwindow.PICTURE_SECTORS = $pictureJson;`n")
 function Read-DiarySection([string]$html, [string]$className) {
     $opening = [regex]::Match($html, '(?is)<div\b(?=[^>]*\bclass\s*=\s*["''][^"'']*\b' + $className + '\b[^"'']*["''])[^>]*>')
     if (!$opening.Success) { return $null }

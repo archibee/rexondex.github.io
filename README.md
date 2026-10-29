@@ -1,128 +1,112 @@
 # REXONDEX Archive
 
-HTML, CSS, JavaScript만 사용하는 GitHub Pages용 정적 일기장입니다. 사용자 정의 GitHub Actions, 패키지 설치, 서버가 필요하지 않습니다. 로컬 Git 커밋 훅이 완성된 정적 파일을 자동으로 준비합니다.
+GitHub Pages용 정적 일기·사진 아카이브입니다. 파일을 추가한 뒤 아래 명령을 복사해서 실행하고, 변경된 파일을 직접 커밋·푸시합니다. Git 훅과 사용자 정의 GitHub Actions를 사용하지 않습니다.
 
-## 일기 등록
+## 매번 복붙해서 실행할 명령
 
-1. `database/YYMMDD.html`에 일기를 작성합니다.
-2. `database.js`에 **확장자를 포함한 파일명**을 등록합니다.
-3. HTML 원본과 목록을 함께 커밋하고 `main`에 푸시합니다.
-
-```js
-window.DIARY_FILES = [
-  '261025.html',
-  '261029.html',
-];
-```
-
-등록된 HTML은 일기 원본이면서 직접 열 수 있는 검색용 페이지입니다. 예: `https://rexondex.github.io/database/261029.html`. 피드와 달력도 같은 파일을 사용합니다. 목록 순서와 관계없이 최신 날짜순으로 표시하고 홈에서는 기존처럼 8개씩 불러옵니다. 전체 일기 화면도 목록에서 최신 내용을 읽습니다.
-
-새 일기는 본문만 작성해도 됩니다. 파일명 `261030.html`에서 날짜를 정하고, 첫 커밋 때 완성된 정적 HTML 문서로 자동 구성합니다. 기존 일기는 `.post-content` 안의 본문만 수정합니다. 제목·날짜·canonical·공유 메타 정보·구조화 데이터·전후 일기 링크는 자동 갱신되므로 직접 수정할 필요가 없습니다. 작성한 본문과 참고 링크는 보존합니다. 첫 문단이 날짜만 적힌 `<p>26.01.01</p>`이면 그 날짜도 파일명에 맞춰 갱신합니다.
-
-```html
-<p>오늘 작성한 일기입니다.</p>
-<p>다음 문단입니다.<br>같은 문단의 줄바꿈입니다.</p>
-```
-
-참고 링크를 함께 작성할 때는 아래처럼 본문과 구분합니다.
-
-본문은 Markdown 대신 HTML로 작성합니다.
-
-```html
-<div class="post-content">
-  <p>26.10.30</p>
-  <p>오늘의 일기입니다.<br>같은 문단의 다음 줄입니다.</p>
-  <p>새 문단입니다.</p>
-</div>
-```
-
-참고 링크가 있으면 본문 바깥에 추가합니다. 없으면 이 블록은 생략합니다.
-
-```html
-<div class="post-references" aria-label="참고 링크">
-  <a class="post-reference" href="https://example.com">관련 자료</a>
-</div>
-```
-
-## 사진 등록
-
-사진 원본을 `picture/sector-1/` 등에 넣고 `pictures.js`의 해당 섹터 `files`에 파일명을 직접 추가합니다. 기존 방식과 같습니다. 설명은 선택 사항이며 입력하면 썸네일과 모달의 대체 텍스트에 사용합니다.
-
-```js
-window.PICTURE_SECTORS = [
-  {
-    id: 'sector-1',
-    files: ['photo.jpg', 'another.webp'],
-    descriptions: { 'photo.jpg': '사진에 실제로 보이는 장면 설명' },
-  },
-];
-```
-
-일기·사진 목록에는 작은따옴표·큰따옴표, 주석, 마지막 쉼표를 사용할 수 있습니다. 함수나 동적 표현식 없이 배열 데이터로 작성합니다.
-
-## SEO와 정적 페이지
-
-- `database/YYMMDD.html`: 실제 일기 본문·날짜별 메타 정보·canonical·공유 정보·BlogPosting JSON-LD를 가진 독립 페이지입니다. 원본과 검색용 페이지를 따로 만들지 않습니다.
-- `index.html`, `archive.html`, `pictures.html`: 초기 HTML에도 본문이 포함되어 있고, 앱 실행 시 목록에서 최신 내용을 읽습니다.
-- `sitemap.xml`, `robots.txt`: 검색엔진의 페이지·이미지 발견을 돕습니다.
-- `legacy-links.js`: `#daily-`로 시작하는 예전 링크는 특정 일기를 선택하지 않고 메인으로 이동합니다.
-- `.nojekyll`: GitHub Pages에서 파일을 그대로 게시합니다.
-
-## 커밋 시 SEO 자동 처리
-
-현재 로컬 저장소에는 설치되어 있습니다. 새 컴퓨터에서 clone한 경우 한 번만 실행합니다.
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-hooks.ps1
-```
-
-그다음 평소처럼 작성·등록·커밋·푸시하면 됩니다.
-
-```powershell
-git add database/261030.html database.js
-git commit -m "261030 일기 추가"
-git push origin main
-```
-
-커밋 시 `.githooks/pre-commit`이 다음을 자동으로 생성하고 **같은 커밋에 포함**합니다.
-
-- 파일명에 맞는 날짜·제목·canonical·공유 정보·BlogPosting JSON-LD
-- 본문에서 추출한 설명, 개별 페이지의 정적 본문과 전후 일기 링크
-- 홈의 최근 8개 정적 본문, 전체 일기 정적 본문, 사진 정적 갤러리
-- HTML 페이지와 지원 이미지 주소가 포함된 사이트맵
-
-자동화는 커밋에 올린 내용만 사용합니다. 부분적으로 스테이징한 파일의 나머지 수정과 다른 미커밋 작업은 덮어쓰거나 커밋에 끌어오지 않습니다. 원본 HTML이 잘못되었거나 등록된 원본이 없으면 해당 커밋을 중단하고 이유를 표시합니다. `git add`에 새 원본과 목록을 함께 포함합니다.
-
-**로컬 Git 훅이므로 GitHub 웹 편집, 훅을 설치하지 않은 다른 컴퓨터, `git commit --no-verify`에서는 자동 실행되지 않습니다.** GitHub Pages 자체는 계속 완성된 파일을 그대로 게시합니다. 모든 작성 환경에서 서버 측으로 자동 처리하는 기능은 없습니다.
-
-수동 실행도 가능합니다.
+프로젝트 루트 폴더에서 PowerShell로 실행합니다. 일기와 사진을 한 번에 처리합니다.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 ```
 
+이 명령은 Git 명령을 실행하지 않습니다. 스테이징·커밋·푸시는 직접 합니다. `ExecutionPolicy Bypass`는 이 PowerShell 프로세스에만 적용됩니다. 별도 패키지나 설치 단계는 없습니다.
+
+## 평소 작업 순서
+
+1. 일기는 `database/YYMMDD.html`에 추가하거나 본문을 수정합니다.
+2. 사진은 `picture/sector-1/` 등 섹터 폴더에 추가합니다.
+3. 위 명령을 한 번 실행합니다.
+4. 변경 내용을 확인하고 원본과 갱신된 파일을 함께 커밋·푸시합니다.
+
+**`database.js`와 `pictures.js`의 파일 목록은 직접 수정하지 않습니다.** 실행 시 실제 폴더에서 목록을 다시 만듭니다. 목록을 따로 수정하는 두 번째 작업이 없어, 원본과 목록이 어긋나는 일을 줄일 수 있습니다.
+
+## 일기 작성
+
+예를 들어 `database/261030.html`을 만들고 본문만 작성하면 됩니다.
+
+```html
+<p>오늘의 일기입니다.</p>
+<p>다음 문단입니다.<br>같은 문단의 줄바꿈입니다.</p>
+```
+
+명령을 실행하면 파일명에서 날짜를 정하고, 해당 파일을 같은 디자인의 완성된 HTML 페이지로 구성합니다. 직접 열 수 있는 주소는 `https://rexondex.github.io/database/261030.html`입니다. 이후 수정할 때는 그 파일의 `.post-content` 안의 본문만 편집합니다. 제목·메타 정보 등을 따로 관리하지 않아도 됩니다.
+
+참고 링크가 있다면 본문과 구분합니다.
+
+```html
+<div class="post-references" aria-label="참고 링크">
+  <a class="post-reference" href="https://example.com">관련 자료</a>
+</div>
+<div class="post-content">
+  <p>오늘의 일기입니다.</p>
+</div>
+```
+
+- 등록 대상은 `database/` 바로 아래의 **숫자 6자리 + `.html`** 파일입니다. 날짜는 실제 존재해야 합니다.
+- 해당 형식의 파일은 모두 등록됩니다. 미공개 초안은 다른 폴더에 두거나 `draft-261030.html`처럼 다른 이름을 사용합니다.
+- 날짜·제목·canonical·공유 정보·구조화 데이터·전후 일기 링크는 자동 구성합니다.
+- 첫 문단이 날짜만 적힌 `<p>26.01.01</p>`이면 파일명에 맞춰 갱신합니다. 본문 속 다른 날짜와 내용은 그대로 둡니다.
+- 기존 피드의 최신순 표시, 8개씩 추가 로딩, 달력과 테마 디자인은 유지합니다.
+
+## 사진 추가
+
+아래처럼 **`picture/섹터폴더/파일명`** 구조로 추가합니다.
+
+```text
+picture/
+├─ sector-1/
+│  ├─ photo.jpg
+│  └─ another.webp
+└─ sector-2/
+   └─ new-photo.png
+```
+
+명령 실행 시 새 사진과 새 섹터를 자동으로 찾아 `pictures.js`와 정적 사진 갤러리에 반영합니다. 폴더 이름은 영문·숫자·하이픈을 사용합니다. 사진은 섹터 폴더 바로 안에 넣습니다. `picture/` 바로 아래에 사진을 넣으면 올바른 위치를 안내하며 중단합니다.
+
+지원 확장자는 JPG, JPEG, PNG, WebP, GIF, AVIF, HEIC입니다. HEIC 원본 링크는 유지하지만 Google 이미지 사이트맵에는 제외합니다.
+
+사진 설명을 넣고 싶을 때만 `pictures.js`의 해당 섹터 `descriptions`를 편집합니다. **기존 파일에 작성한 설명은 명령을 다시 실행해도 보존합니다.** 예를 들어 다음과 같습니다.
+
+```js
+"descriptions": {
+  "photo.jpg": "사진에 실제로 보이는 장면 설명"
+}
+```
+
+## 명령이 자동 처리하는 것
+
+- `database/`의 실제 HTML 파일로 `database.js` 목록 갱신
+- `picture/`의 섹터·사진 파일로 `pictures.js` 목록 갱신
+- 일기별 날짜·제목·본문 요약·canonical·공유 정보·BlogPosting JSON-LD
+- 개별 일기 HTML과 전후 일기 링크
+- 홈의 최근 8개와 전체 일기의 초기 정적 본문
+- 섹터별 정적 사진 갤러리와 페이지·이미지 사이트맵
+
+파일 추가뿐 아니라 수정·삭제·이름 변경도 반영합니다. 삭제한 파일은 목록과 사이트맵에서 빠집니다. 작성한 HTML 본문과 남아 있는 사진의 설명은 보존합니다. 자동 생성하는 제목·메타 정보·페이지 틀은 매번 다시 구성합니다.
+
+목록이나 생성 파일을 수동으로 바꿔도 다음 실행 시 실제 폴더 기준으로 갱신됩니다. 원본과 갱신 결과를 함께 게시해야 검색엔진과 JavaScript 없는 환경에도 최신 내용이 제공됩니다.
+
 ## GitHub Pages 설정
 
-저장소의 `Settings` → `Pages`에서 설정합니다.
+`Settings` → `Pages`에서 다음과 같이 설정합니다.
 
-1. `Source`: **Deploy from a branch**
-2. `Branch`: **main**
-3. 폴더: **/(root)**
-4. `Save`
+- `Source`: **Deploy from a branch**
+- `Branch`: **main**
+- 폴더: **/(root)**
 
-이후 원본 HTML·목록을 푸시하면 정적 배포됩니다. 이전에 배포 소스를 변경했다면 위 설정으로 되돌립니다. 저장소의 사용자 정의 Actions 워크플로와 아티팩트 패키징 코드는 제거했습니다. GitHub가 자체 관리하는 Pages 배포 작업은 Actions 화면에 표시될 수 있습니다.
+`.nojekyll`을 유지하며 완성된 정적 파일을 게시합니다. 이 프로젝트의 커스텀 Actions 워크플로와 Git 훅은 없습니다. GitHub가 자체 관리하는 Pages 배포 작업은 Actions 화면에 표시될 수 있습니다.
+
+예전 `#daily-…` 링크는 기존 호환 처리대로 특정 글을 선택하지 않고 메인으로 이동합니다.
 
 ## 주요 파일
 
 | 내용 | 위치 |
 |---|---|
 | 일기 HTML 원본·개별 페이지 | `database/YYMMDD.html` |
-| 일기 파일명 목록 | `database.js` |
-| 사진 목록·설명 / 사진 원본 | `pictures.js` / `picture/` |
+| 사진 원본 | `picture/섹터폴더/` |
+| 자동 생성 파일 목록 | `database.js`, `pictures.js` |
 | 피드·달력·사진·설정 로직 | `app.js` |
 | 화면 디자인·색상 | `style.css`, `theme.css` |
-| HTML·메타 정보·스냅샷·사이트맵 갱신 | `scripts/update-seo.ps1` |
-| 로컬 커밋 자동화 / 최초 설치 | `.githooks/pre-commit`, `scripts/seo-pre-commit.ps1` / `scripts/install-hooks.ps1` |
+| 파일 탐색·목록·SEO 갱신 명령 | `scripts/update-seo.ps1` |
 | 선택적인 정적 링크 검사 | `scripts/test-seo.ps1` |
-
-로컬에서는 정적 HTTP 서버로 열면 됩니다. HTML 파일을 더블클릭하면 브라우저 보안 정책 때문에 피드의 `fetch`가 제한될 수 있습니다.
