@@ -13,7 +13,8 @@ $siteUrl = [uri]([regex]::Match($homeHtml, 'rel="canonical" href="([^"]+)"').Gro
 $sitemap = [xml](Read-SiteFile 'sitemap.xml')
 $locations = @($sitemap.urlset.url | ForEach-Object { [string]$_.loc })
 Assert ($locations.Count -eq @($locations | Sort-Object -Unique).Count) 'Duplicate sitemap URLs.'
-$diaryIds = @((Read-DiaryFiles (Read-SiteFile 'database.js')).Keys | Sort-Object)
+$diaryFiles = Read-DiaryFiles (Read-SiteFile 'database.js')
+$diaryIds = @($diaryFiles.Keys | Sort-Object)
 $titles = @{}
 $checkedLinks = 0
 foreach ($location in $locations) {
@@ -33,7 +34,7 @@ foreach ($location in $locations) {
     Assert ($title -and !$titles.ContainsKey($title)) "Empty or duplicate title: $relative"
     $titles[$title] = $true
     $structured = [regex]::Match($html, '(?s)<script type="application/ld\+json">(.*?)</script>').Groups[1].Value | ConvertFrom-Json
-    if ($relative -match '^diary/([0-9]{6})\.html$') {
+    if ($relative -match '^database/([0-9]{6})\.html$') {
         $id = $Matches[1]
         Assert ($html.Contains('data-diary-id="' + $id + '"')) "Wrong diary state: $relative"
         Assert (([regex]::Matches($html, '<article\b')).Count -eq 1) "Expected one diary: $relative"
@@ -58,7 +59,7 @@ foreach ($location in $locations) {
     }
 }
 foreach ($id in $diaryIds) {
-    Assert ($locations -contains "$($siteUrl.AbsoluteUri)diary/$id.html") "Diary missing from sitemap: $id"
+    Assert ($locations -contains "$($siteUrl.AbsoluteUri)database/$($diaryFiles[$id])") "Diary missing from sitemap: $id"
 }
 $imageNodes = @($sitemap.SelectNodes('//*[local-name()="image"]/*[local-name()="loc"]'))
 foreach ($node in $imageNodes) {

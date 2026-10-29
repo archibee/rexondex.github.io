@@ -1,4 +1,4 @@
-﻿# Refresh committed static HTML after updating database.js or diary files.
+﻿# Optional: refresh home/archive/gallery snapshots and sitemap from existing HTML diaries.
 # No dependencies; compatible with Windows PowerShell 5.1 and PowerShell 7.
 $ErrorActionPreference = 'Stop'
 $siteRoot = Split-Path $PSScriptRoot -Parent
@@ -17,53 +17,12 @@ function Escape-Html([string]$value) { [System.Net.WebUtility]::HtmlEncode($valu
 $diaryFiles = Read-DiaryFiles (Read-SiteFile 'database.js')
 $ids = @($diaryFiles.Keys | Sort-Object -Descending)
 if (!$ids.Count) { throw 'No diary IDs found in database.js.' }
-$culture = [System.Globalization.CultureInfo]::GetCultureInfo('ko-KR')
-$entries = @{}
+# The HTML diary is the source and the public search page. Never rewrite it here.
 $posts = foreach ($id in $ids) {
-    $iso = "20$($id.Substring(0, 2))-$($id.Substring(2, 2))-$($id.Substring(4, 2))"
-    $date = [datetime]::ParseExact($iso, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
-    $source = (Read-SiteFile "database/$($diaryFiles[$id])").TrimStart([char]0xFEFF).Replace("`r`n", "`n")
-    $lines = $source -split "`n"
-    $first = $lines[0].Trim()
-    $references = [System.Collections.Generic.List[string]]::new()
-    $cursor = 0
-    # Match the reference syntax used by parseDiaryMarkdown in app.js.
-    foreach ($match in [regex]::Matches($first, '\[([^\]]+)\](?:\(([^)]+)\))?')) {
-        if ($match.Index -ne $cursor) { break }
-        $raw = $match.Groups[1].Value.Trim()
-        if ($match.Groups[2].Success) { $raw = $match.Groups[2].Value.Trim() }
-        $href = $raw
-        if ($href -notmatch '^(https?://|mailto:|/|\./|\.\./|#)') {
-            if ($href -match '^(www\.|[a-z0-9.-]+\.[a-z]{2,})') { $href = "https://$href" }
-            else { break }
-        }
-        $label = $match.Groups[1].Value.Trim()
-        $references.Add('<a class="post-reference" href="' + (Escape-Html $href) + '">' + (Escape-Html $label) + '</a>')
-        $cursor += $match.Length
-    }
-    $referenceHtml = ''
-    if ($references.Count -and $cursor -eq $first.Length) {
-        $source = ($lines | Select-Object -Skip 1) -join "`n"
-        $referenceHtml = '<div class="post-references" aria-label="&#52280;&#44256; &#47553;&#53356;">' + ($references -join '') + '</div>'
-    }
-    # A dependency-free text snapshot: escape markup and retain paragraphs/line breaks.
-    # The interactive app continues to render full Markdown with marked.
-    $paragraphs = @($source.Trim() -split '\n\s*\n' | ForEach-Object {
-        '<p>' + (Escape-Html $_).Replace("`n", '<br>') + '</p>'
-    }) -join "`n"
-    $label = Escape-Html ($date.ToString('D', $culture))
-    $summary = [regex]::Replace($source.Trim(), '\s+', ' ')
-    $summary = [regex]::Replace($summary, '^[0-9]{2}\.[0-9]{2}\.[0-9]{2}\s*', '')
-    if ($summary.Length -gt 150) { $summary = $summary.Substring(0, 150) + '…' }
-    $entries[$id] = @{ Date = $iso; Label = $date.ToString('yyyy년 M월 d일', $culture); Summary = $summary }
-    @"
-<article class="diary-post" id="daily-$id" aria-label="$label">
-  <header><img class="post-avatar" src="./rexondex.jpg" alt="" width="44" height="44" loading="lazy"><div><strong>rexondex</strong><time datetime="$iso">$label</time></div></header>
-  $referenceHtml
-  <div class="post-content">$paragraphs</div>
-  <footer><a class="post-permalink" href="./diary/$id.html">$id &#183; &#47553;&#53356;</a></footer>
-</article>
-"@
+    $html = Read-SiteFile "database/$($diaryFiles[$id])"
+    $article = [regex]::Match($html, '(?s)<article\b.*?</article>').Value
+    if (!$article -or !$article.Contains('class="post-content"')) { throw "Missing diary article in $($diaryFiles[$id])." }
+    $article
 }
 
 function Render-Shell([string]$heading, [string]$body, [string]$navigation) {
@@ -116,7 +75,7 @@ function Render-Page([string]$path, [string]$title, [string]$description, [strin
     $base = if ($path.Contains('/')) { '<base href="../">' } else { '' }
     $scripts = '<script src="./legacy-links.js"></script><script src="./theme-init.js"></script>'
     if ($interactive) {
-        $scripts += '<script defer src="./database.js"></script><script defer src="./pictures.js"></script><script defer src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script><script defer src="./app.js"></script>'
+        $scripts += '<script defer src="./database.js"></script><script defer src="./pictures.js"></script><script defer src="./app.js"></script>'
     }
     $noscript = '<noscript><p>달력과 테마 설정은 JavaScript를 활성화하면 사용할 수 있습니다. <a href="./">메인</a> · <a href="./archive.html">전체 일기</a> · <a href="./pictures.html">사진</a></p></noscript>'
     Write-SiteFile $path "<!doctype html>`n<html lang=""ko"">`n<head>`n$base$head`n<script type=""application/ld+json"">$json</script>`n$scripts`n</head>`n<body $attributes><div id=""app"">`n<!-- STATIC-ARCHIVE:START -->`n$body`n<!-- STATIC-ARCHIVE:END -->`n</div>$noscript</body>`n</html>`n"
@@ -126,29 +85,13 @@ $homeDescription = 'rexondex의 일기와 사진을 모은 개인 디지털 아�
 $homeContent = Render-Shell '일기' (($posts | Select-Object -First 8) -join "`n") '<a href="./archive.html">전체 일기 보기</a> · <a href="./pictures.html">사진 보기</a>'
 Render-Page 'index.html' 'rexondex Archive' $homeDescription $homeContent $true
 $archive = Render-Shell '전체 일기' ($posts -join "`n") '<a href="./">일기장으로 돌아가기</a>'
-Render-Page 'archive.html' '전체 일기 | rexondex Archive' 'rexondex의 전체 일기를 최신 날짜순으로 읽고, 각 날짜의 일기와 참고 링크를 찾아볼 수 있습니다.' $archive
+Render-Page 'archive.html' '전체 일기 | rexondex Archive' 'rexondex의 전체 일기를 최신 날짜순으로 읽고, 각 날짜의 일기와 참고 링크를 찾아볼 수 있습니다.' $archive $true 'data-all-entries="true"'
 
 $sitemapEntries = [System.Collections.Generic.List[string]]::new()
 $sitemapEntries.Add("<url><loc>$siteUrl</loc></url>")
 $sitemapEntries.Add("<url><loc>$($siteUrl)archive.html</loc></url>")
-for ($i = 0; $i -lt $ids.Count; $i++) {
-    $id = $ids[$i]
-    $entry = $entries[$id]
-    $title = "$($entry.Label) 일기 | rexondex Archive"
-    $description = "$($entry.Label)의 일기. $($entry.Summary)"
-    $navigation = '<a href="./">메인</a> · <a href="./archive.html">전체 일기</a>'
-    if ($i -gt 0) { $navigation += " · <a href=""./diary/$($ids[$i - 1]).html"">다음 일기</a>" }
-    if ($i -lt $ids.Count - 1) { $navigation += " · <a href=""./diary/$($ids[$i + 1]).html"">이전 일기</a>" }
-    $body = Render-Shell "$($entry.Label) 일기" $posts[$i] $navigation
-    $entity = [ordered]@{
-        '@type' = 'BlogPosting'; '@id' = "$($siteUrl)diary/$id.html#article"
-        headline = "$($entry.Label) 일기"; description = $description
-        datePublished = $entry.Date; inLanguage = 'ko'
-        author = [ordered]@{ '@id' = "$($siteUrl)#author" }
-        mainEntityOfPage = "$($siteUrl)diary/$id.html"
-    }
-    Render-Page "diary/$id.html" $title $description $body $true "data-diary-id=""$id""" $entity
-    $sitemapEntries.Add("<url><loc>$($siteUrl)diary/$id.html</loc></url>")
+foreach ($id in $ids) {
+    $sitemapEntries.Add("<url><loc>$($siteUrl)database/$($diaryFiles[$id])</loc></url>")
 }
 
 $sectors = @(Read-ManifestArray (Read-SiteFile 'pictures.js') 'PICTURE_SECTORS' | Sort-Object { [regex]::Replace($_.id, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })
@@ -183,4 +126,4 @@ for ($i = 0; $i -lt $sectors.Count; $i++) {
     $sitemapEntries.Add("<url><loc>$siteUrl$path</loc>$($imageEntries -join '')</url>")
 }
 Write-SiteFile 'sitemap.xml' ('<?xml version="1.0" encoding="UTF-8"?>' + "`n" + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' + "`n" + ($sitemapEntries -join "`n") + "`n</urlset>`n")
-Write-Output "Updated home, archive, $($ids.Count) diary pages, $($sectors.Count) galleries and sitemap.xml."
+Write-Output "Updated snapshots and sitemap for $($ids.Count) existing HTML diaries and $($sectors.Count) galleries."

@@ -33,10 +33,10 @@ function Read-DiaryFiles([string]$source) {
     $files = @{}
     foreach ($value in @(Read-ManifestArray $source 'DIARY_FILES')) {
         $file = ([string]$value).Trim()
-        if ($file -notmatch '^([0-9]{6})(?:\.md)?$') { throw "Invalid diary filename: $file" }
+        if ($file -notmatch '^([0-9]{6})\.html$') { throw "Invalid diary filename (expected YYMMDD.html): $file" }
         $id = $Matches[1]
         [void][datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
-        $files[$id] = if ($file -match '\.md$') { $file } else { "$id.md" }
+        $files[$id] = $file
     }
     $files
 }

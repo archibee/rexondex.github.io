@@ -19,55 +19,31 @@
     year: 'numeric', month: 'long', day: 'numeric', ...(weekday ? { weekday: 'long' } : {})
   });
 
-  const normalizeLink = (value) => {
-    const href = value.trim();
-    if (/^(https?:\/\/|mailto:|\/|\.\/|\.\.\/|#)/i.test(href)) return href;
-    if (/^(www\.|[a-z0-9.-]+\.[a-z]{2,})/i.test(href)) return `https://${href}`;
-    return '';
-  };
-
-  const formatLinkLabel = (href, fallback) => {
-    try {
-      const url = new URL(href);
-      if (!/^https?:$/i.test(url.protocol)) return fallback;
-      const host = url.host.replace(/^www\./, '');
-      const path = url.pathname.split('/').filter(Boolean).slice(0, 2).join('/');
-      return path ? `${host}/${path}` : host;
-    } catch { return fallback; }
-  };
-
-  const parseDiaryMarkdown = (source) => {
-    const markdown = source.replace(/^\uFEFF/, '');
-    const lines = markdown.split(/\r?\n/);
-    const first = (lines[0] || '').trim();
-    const references = [];
-    const linkPattern = /\[([^\]]+)\](?:\(([^)]+)\))?/gy;
-    let cursor = 0;
-
-    while (cursor < first.length) {
-      linkPattern.lastIndex = cursor;
-      const match = linkPattern.exec(first);
-      if (!match) return { markdown, references: [] };
-
-      const raw = (match[2] || match[1]).trim();
-      const href = normalizeLink(raw);
-      if (!href) return { markdown, references: [] };
-
-      const label = match[2] ? match[1].trim() : formatLinkLabel(href, raw);
-      references.push({ href, label });
-      cursor = linkPattern.lastIndex;
-    }
-
-    if (!references.length) return { markdown, references: [] };
-    return { markdown: lines.slice(1).join('\n'), references };
+  const parseDiaryHtml = (source) => {
+    const page = new DOMParser().parseFromString(source, 'text/html');
+    const content = page.querySelector('.post-content');
+    if (!content) throw new Error('Diary HTML must contain .post-content');
+    const references = [...page.querySelectorAll('.post-references a')].map((link) => {
+      const href = link.getAttribute('href');
+      let label = link.textContent.trim();
+      if (label === href) {
+        try {
+          const url = new URL(href);
+          const path = url.pathname.split('/').filter(Boolean).slice(0, 2).join('/');
+          label = url.host.replace(/^www\./, '') + (path ? `/${path}` : '');
+        } catch { /* Keep the original label. */ }
+      }
+      return { href, label };
+    });
+    return { html: content.innerHTML, references };
   };
 
   const createArchive = (rawIds) => {
     const files = new Map();
     for (const value of rawIds) {
       const file = String(value).trim();
-      const match = file.match(/^(\d{6})(?:\.md)?$/i);
-      if (match && parseDiaryId(match[1])) files.set(match[1], /\.md$/i.test(file) ? file : `${file}.md`);
+      const match = file.match(/^(\d{6})\.html$/i);
+      if (match && parseDiaryId(match[1])) files.set(match[1], file);
     }
     const ids = [...files.keys()].sort();
     const idSet = new Set(ids);
@@ -94,9 +70,9 @@
 
     async get(id) {
       if (this.#cache.has(id)) return this.#cache.get(id);
-      const response = await fetch(`${this.basePath}/${this.files.get(id) || `${id}.md`}`);
+      const response = await fetch(`${this.basePath}/${this.files.get(id) || `${id}.html`}`);
       if (!response.ok) throw new Error(`Diary ${id}: HTTP ${response.status}`);
-      const entry = { id, ...parseDiaryMarkdown(await response.text()) };
+      const entry = { id, ...parseDiaryHtml(await response.text()) };
       this.#cache.set(id, entry);
       return entry;
     }
@@ -173,9 +149,6 @@
   };
   const svg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const renderMarkdown = (markdown) => window.marked
-    ? window.marked.parse(markdown, { breaks: true })
-    : `<p>${escapeHtml(markdown).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p>`;
   const renderReferences = (references) => references.length ? `<div class="post-references" aria-label="참고 링크">${references.map((reference) => `<a class="post-reference" href="${escapeHtml(reference.href)}" target="_blank" rel="noopener"><span>${escapeHtml(reference.label)}</span>${svg('external')}</a>`).join('')}</div>` : '';
   const profileImage = '<img class="avatar" src="./rexondex.jpg" alt="rexondex 프로필 이미지">';
   const brandLogo = '<img class="brand-logo" src="./favicon.svg" alt="">';
@@ -195,7 +168,8 @@
       this.activeView = document.body.dataset.initialView || 'feed';
       this.feedIds = this.entryId ? [this.entryId] : [...this.archive.ids].reverse();
       this.feedCursor = 0;
-      this.pageSize = 8;
+      this.allEntries = document.body.dataset.allEntries === 'true';
+      this.pageSize = this.allEntries ? this.feedIds.length : 8;
       this.referencesLoaded = false;
       this.pictureSectors = (window.PICTURE_SECTORS || [])
         .filter((sector) => sector && /^[a-z0-9-]+$/i.test(String(sector.id)) && Array.isArray(sector.files))
@@ -216,6 +190,7 @@
       if (this.activeView === 'feed') this.renderNextFeedPage();
       this.showView(this.activeView);
       if (this.entryId) document.getElementById('feedTitle').textContent = `${formatDate(parseDiaryId(this.entryId), false)} 일기`;
+      else if (this.allEntries) document.getElementById('feedTitle').textContent = '전체 일기';
     }
 
     navItems() {
@@ -344,7 +319,7 @@
       this.els.feedMore.textContent = '기록을 불러오는 중...';
       this.feedLoadPromise = Promise.all(ids.map(async (id) => {
         const entry = await this.repository.get(id), date = parseDiaryId(id);
-        return `<article class="diary-post" id="daily-${id}" aria-label="${escapeHtml(formatDate(date))} 일기"><header><img class="post-avatar" src="./rexondex.jpg" alt="" width="44" height="44"><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${renderMarkdown(entry.markdown)}</div><footer><a class="post-permalink" href="./diary/${id}.html" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
+        return `<article class="diary-post" id="daily-${id}" aria-label="${escapeHtml(formatDate(date))} 일기"><header><img class="post-avatar" src="./rexondex.jpg" alt="" width="44" height="44"><div><strong>rexondex</strong><time datetime="20${id.slice(0, 2)}-${id.slice(2, 4)}-${id.slice(4, 6)}">${escapeHtml(formatDate(date))}</time></div></header>${renderReferences(entry.references)}<div class="post-content">${entry.html}</div><footer><a class="post-permalink" href="./database/${this.archive.files.get(id)}" aria-label="${id} 일기 링크">${id} · 링크</a></footer></article>`;
       }));
       const posts = await this.feedLoadPromise;
       this.feedLoadPromise = null;
@@ -366,7 +341,7 @@
     renderCalendar() {
       const { year, month, referenceIds } = this.store.state, first = new Date(year, month, 1), start = new Date(year, month, 1 - ((first.getDay() + 6) % 7));
       this.els.calendarTitle.textContent = `${year}년 ${month + 1}월`; this.els.monthMeta.textContent = `${this.archive.count(year, month)}개의 기록`;
-      this.els.calendar.innerHTML = Array.from({ length: 42 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); const id = dateToDiaryId(date), has = this.archive.idSet.has(id); return `<div class="day ${date.getMonth() !== month ? 'outside' : ''}">${has ? `<a href="./diary/${id}.html" data-entry="${id}" class="has-entry ${referenceIds.has(id) ? 'has-reference' : ''}" aria-label="${escapeHtml(formatDate(date))} 기록으로 이동"><span>${date.getDate()}</span></a>` : `<span>${date.getDate()}</span>`}</div>`; }).join('');
+      this.els.calendar.innerHTML = Array.from({ length: 42 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); const id = dateToDiaryId(date), has = this.archive.idSet.has(id); return `<div class="day ${date.getMonth() !== month ? 'outside' : ''}">${has ? `<a href="./database/${this.archive.files.get(id)}" data-entry="${id}" class="has-entry ${referenceIds.has(id) ? 'has-reference' : ''}" aria-label="${escapeHtml(formatDate(date))} 기록으로 이동"><span>${date.getDate()}</span></a>` : `<span>${date.getDate()}</span>`}</div>`; }).join('');
     }
   }
 
