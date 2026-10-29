@@ -63,11 +63,17 @@
   };
 
   const createArchive = (rawIds) => {
-    const ids = [...new Set(rawIds.filter((id) => parseDiaryId(id)))].sort();
+    const files = new Map();
+    for (const value of rawIds) {
+      const file = String(value).trim();
+      const match = file.match(/^(\d{6})(?:\.md)?$/i);
+      if (match && parseDiaryId(match[1])) files.set(match[1], /\.md$/i.test(file) ? file : `${file}.md`);
+    }
+    const ids = [...files.keys()].sort();
     const idSet = new Set(ids);
     const dates = ids.map(parseDiaryId);
     return {
-      ids, idSet, dates,
+      ids, idSet, dates, files,
       latest: dates.at(-1) || new Date(),
       years: [...new Set(dates.map((date) => date.getFullYear()))].sort((a, b) => b - a),
       count(year, month = null) {
@@ -81,13 +87,14 @@
   class HttpDiaryRepository {
     #cache = new Map();
 
-    constructor(basePath = './database') {
+    constructor(basePath = './database', files = new Map()) {
       this.basePath = basePath;
+      this.files = files;
     }
 
     async get(id) {
       if (this.#cache.has(id)) return this.#cache.get(id);
-      const response = await fetch(`${this.basePath}/${id}.md`);
+      const response = await fetch(`${this.basePath}/${this.files.get(id) || `${id}.md`}`);
       if (!response.ok) throw new Error(`Diary ${id}: HTTP ${response.status}`);
       const entry = { id, ...parseDiaryMarkdown(await response.text()) };
       this.#cache.set(id, entry);
@@ -367,7 +374,7 @@
 
   const diaryFiles = window.DIARY_FILES || [];
   const archive = createArchive(diaryFiles);
-  const repository = new HttpDiaryRepository('./database');
+  const repository = new HttpDiaryRepository('./database', archive.files);
   const store = new ArchiveStore(archive);
   const themes = new ThemeManager();
 

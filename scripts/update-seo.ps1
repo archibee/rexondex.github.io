@@ -2,6 +2,7 @@
 # No dependencies; compatible with Windows PowerShell 5.1 and PowerShell 7.
 $ErrorActionPreference = 'Stop'
 $siteRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'manifest.ps1')
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 function Read-SiteFile([string]$path) {
     [System.IO.File]::ReadAllText((Join-Path $siteRoot $path), [System.Text.Encoding]::UTF8)
@@ -13,15 +14,15 @@ function Write-SiteFile([string]$path, [string]$content) {
 }
 function Escape-Html([string]$value) { [System.Net.WebUtility]::HtmlEncode($value) }
 
-$ids = @([regex]::Matches((Read-SiteFile 'database.js'), "(?m)^\s*'([0-9]{6})'\s*,?\s*$") |
-    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique -Descending)
+$diaryFiles = Read-DiaryFiles (Read-SiteFile 'database.js')
+$ids = @($diaryFiles.Keys | Sort-Object -Descending)
 if (!$ids.Count) { throw 'No diary IDs found in database.js.' }
 $culture = [System.Globalization.CultureInfo]::GetCultureInfo('ko-KR')
 $entries = @{}
 $posts = foreach ($id in $ids) {
     $iso = "20$($id.Substring(0, 2))-$($id.Substring(2, 2))-$($id.Substring(4, 2))"
     $date = [datetime]::ParseExact($iso, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
-    $source = (Read-SiteFile "database/$id.md").TrimStart([char]0xFEFF).Replace("`r`n", "`n")
+    $source = (Read-SiteFile "database/$($diaryFiles[$id])").TrimStart([char]0xFEFF).Replace("`r`n", "`n")
     $lines = $source -split "`n"
     $first = $lines[0].Trim()
     $references = [System.Collections.Generic.List[string]]::new()
@@ -150,11 +151,7 @@ for ($i = 0; $i -lt $ids.Count; $i++) {
     $sitemapEntries.Add("<url><loc>$($siteUrl)diary/$id.html</loc></url>")
 }
 
-# pictures.js is intentionally a plain assignment to a JSON array.
-$pictureSource = Read-SiteFile 'pictures.js'
-$pictureJson = [regex]::Match($pictureSource, '(?s)window\.PICTURE_SECTORS\s*=\s*(\[.*\])\s*;?\s*$').Groups[1].Value
-if (!$pictureJson) { throw 'PICTURE_SECTORS must contain a JSON array.' }
-$sectors = @($pictureJson | ConvertFrom-Json)
+$sectors = @(Read-ManifestArray (Read-SiteFile 'pictures.js') 'PICTURE_SECTORS' | Sort-Object { [regex]::Replace($_.id, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })
 for ($i = 0; $i -lt $sectors.Count; $i++) {
     $sector = $sectors[$i]
     if ($sector.id -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid picture sector ID.' }

@@ -1,6 +1,7 @@
 # Validate generated pages and the complete local link graph without dependencies.
 $ErrorActionPreference = 'Stop'
 $siteRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'manifest.ps1')
 function Assert([bool]$condition, [string]$message) {
     if (!$condition) { throw $message }
 }
@@ -12,7 +13,7 @@ $siteUrl = [uri]([regex]::Match($homeHtml, 'rel="canonical" href="([^"]+)"').Gro
 $sitemap = [xml](Read-SiteFile 'sitemap.xml')
 $locations = @($sitemap.urlset.url | ForEach-Object { [string]$_.loc })
 Assert ($locations.Count -eq @($locations | Sort-Object -Unique).Count) 'Duplicate sitemap URLs.'
-$diaryIds = @([regex]::Matches((Read-SiteFile 'database.js'), "(?m)^\s*'([0-9]{6})'\s*,?\s*$") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+$diaryIds = @((Read-DiaryFiles (Read-SiteFile 'database.js')).Keys | Sort-Object)
 $titles = @{}
 $checkedLinks = 0
 foreach ($location in $locations) {
