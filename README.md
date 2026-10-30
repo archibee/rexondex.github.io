@@ -43,7 +43,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 </div>
 ```
 
-본문에 URL을 바로 링크로 만들려면 `[[https://example.com]]`처럼 작성합니다. 스크립트가 URL을 HTML 링크로 바꾸며, 화면에는 URL이 링크 버튼으로 표시됩니다. 표시 문구를 따로 쓰려면 `[[링크|주소|표시문구]]` 형식을 사용할 수 있습니다.
+본문에 URL을 바로 링크로 만들려면 `[[https://example.com]]`처럼 작성합니다. 표식을 본문 어디에 두어도 스크립트가 이를 본문 위의 참고 링크 버튼으로 옮깁니다. 표시 문구를 따로 쓰려면 `[[링크|주소|표시문구]]` 형식을 사용할 수 있습니다.
 
 ```text
 [[https://www.threads.com/share/GVr822nNv/]]
