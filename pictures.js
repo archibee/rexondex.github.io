@@ -1,7 +1,7 @@
 // File lists are generated from picture/sector folders. Photo descriptions are preserved.
 window.PICTURE_SECTORS = [
     {
-        "id":  "sector-1",
+        "id":  "folder1",
         "descriptions":  {
 
                          },
