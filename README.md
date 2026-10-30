@@ -10,6 +10,8 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 ```
 
+**입력 형식·파싱 규칙·거부 조건의 기준 문서:** [정적 생성 스크립트 핵심 계약서](docs/SEO-SCRIPT-CONTRACT.md)
+
 성공하면 `Updated snapshots and sitemap…` 메시지가 표시됩니다. 그 뒤 변경 파일을 확인하고 직접 커밋·푸시합니다. 이 명령은 Git 명령을 실행하거나 자동으로 푸시하지 않습니다.
 
 ## 한눈에 보는 구조
@@ -197,6 +199,7 @@ picture/
 | `database/YYMMDD.html` | 일기 본문 원본이자 일기별 정적 페이지 | 본문 편집 |
 | `picture/섹터/` | 사진 원본 | 파일 추가·삭제 |
 | `scripts/update-seo.ps1` | 원본 검색, 파싱, 정적 HTML·메타·사이트맵 생성 | 동작 변경 시 편집 |
+| `docs/SEO-SCRIPT-CONTRACT.md` | 입력 인터페이스·생성 결과·거부·복구 규칙의 기준 설계 문서 | 기능 계약 변경 시 함께 편집 |
 | `scripts/manifest.ps1` | `pictures.js` 같은 JavaScript 배열을 실행하지 않고 읽고, 목록 형식을 검증하는 공통 함수 | 보통 편집하지 않음 |
 | `scripts/test-seo.ps1` | 생성된 페이지·canonical·구조화 데이터·사이트맵·로컬 링크를 빠르게 확인 | 선택적으로 실행 |
 | `database.js` | 브라우저가 사용하는 일기 HTML 파일 목록 | 자동 생성, 직접 편집하지 않음 |

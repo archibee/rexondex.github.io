@@ -174,8 +174,12 @@ if (!$templateMatch.Success) { throw "Home template 'index.html' has no complete
 $template = $templateMatch.Groups[1].Value
 $siteUrlMatch = [regex]::Match($template, '<link rel="canonical" href="([^"]+)"')
 if (!$siteUrlMatch.Success) { throw "Home template 'index.html' has no canonical URL. Restore its canonical link before running the updater." }
+$canonicalText = $siteUrlMatch.Groups[1].Value
 $siteUri = $null
-if (![uri]::TryCreate($siteUrlMatch.Groups[1].Value, [UriKind]::Absolute, [ref]$siteUri) -or $siteUri.Scheme -ne 'https' -or !$siteUri.AbsoluteUri.EndsWith('/')) {
+if (!$canonicalText.EndsWith('/') -or ![uri]::TryCreate($canonicalText, [UriKind]::Absolute, [ref]$siteUri)) {
+    throw "Home canonical in 'index.html' must be an absolute HTTPS URL ending in / (example: https://example.github.io/)."
+}
+if ($siteUri.Scheme -ne 'https' -or $siteUri.Query -or $siteUri.Fragment) {
     throw "Home canonical in 'index.html' must be an absolute HTTPS URL ending in / (example: https://example.github.io/)."
 }
 $requiredHeadPatterns = @(
