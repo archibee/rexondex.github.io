@@ -1,12 +1,12 @@
 # 정적 사이트 생성 스크립트 계약서
 
-이 문서는 `scripts/update-seo.ps1`이 입력으로 받아들이는 형식, 입력을 변환하는 규칙, 생성하는 결과, 거부해야 하는 문서, 파일을 안전하게 갱신하는 경계를 정의합니다. **새 일기·사진을 작성하거나 스크립트를 수정할 때 따르는 프로젝트의 기준 규격**입니다.
+이 문서는 `scripts/build-static-site.ps1`이 입력으로 받아들이는 형식, 입력을 변환하는 규칙, 생성하는 결과, 거부해야 하는 문서, 파일을 안전하게 갱신하는 경계를 정의합니다. **새 일기·사진을 작성하거나 스크립트를 수정할 때 따르는 프로젝트의 기준 규격**입니다.
 
 스크립트 동작과 이 계약이 달라지면 둘 중 하나를 임의로 무시하지 않습니다. 의도한 동작을 정하고 스크립트와 이 문서를 함께 수정한 뒤 기존 콘텐츠로 생성·검사해야 합니다. README는 사용 안내이고, 입력·파싱·출력에 관한 세부 약속은 이 문서가 기준입니다.
 
 ## 1. 목적과 범위
 
-`update-seo.ps1`은 로컬 파일을 읽어 GitHub Pages에 올릴 정적 파일을 생성하는 스크립트입니다.
+`build-static-site.ps1`은 로컬 파일을 읽어 GitHub Pages에 올릴 정적 파일을 생성하는 스크립트입니다.
 
 - 서버, 데이터베이스, 패키지 설치, 사용자 정의 GitHub Actions, Git 훅에 의존하지 않습니다.
 - 파일을 읽고 정적 HTML·목록·사이트맵을 생성합니다.
@@ -16,7 +16,7 @@
 실행 명령:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-static-site.ps1
 ```
 
 프로젝트 루트에서 실행합니다. `-SiteRoot` 매개변수는 별도 복사본이나 격리된 콘텐츠를 처리할 때만 사용합니다.
@@ -122,7 +122,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 
 ## 3. 생성 결과 계약
 
-`update-seo.ps1`은 입력을 기준으로 다음 결과를 생성하거나 갱신합니다.
+`build-static-site.ps1`은 입력을 기준으로 다음 결과를 생성하거나 갱신합니다.
 
 | 출력 | 생성 내용 |
 |---|---|
@@ -170,7 +170,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 새 입력 형식이나 생성 기능을 추가할 때 다음 항목을 함께 갱신합니다.
 
 1. 이 계약서의 입력 규칙·변환·실패 조건
-2. `scripts/update-seo.ps1`의 파서·검증·출력
+2. `scripts/build-static-site.ps1`의 파서·검증·출력
 3. `README.md`의 사용자 작성법과 명령 안내
 4. `scripts/test-seo.ps1` 또는 격리된 입력으로 성공 사례와 거부 사례
 
@@ -179,6 +179,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 ## 6. 관련 문서와 코드
 
 - 상위 운영·설계 안내: [`README.md`](../README.md)
-- 생성기: [`scripts/update-seo.ps1`](../scripts/update-seo.ps1)
+- 생성기: [`scripts/build-static-site.ps1`](../scripts/build-static-site.ps1)
 - 공통 manifest 파서: [`scripts/manifest.ps1`](../scripts/manifest.ps1)
 - 정적 SEO 검사: [`scripts/test-seo.ps1`](../scripts/test-seo.ps1)

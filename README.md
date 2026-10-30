@@ -7,7 +7,7 @@
 새 일기·사진을 추가하거나 수정한 뒤, **프로젝트 루트 폴더의 PowerShell**에서 아래 명령을 실행합니다.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-static-site.ps1
 ```
 
 **입력 형식·파싱 규칙·거부 조건의 기준 문서:** [정적 생성 스크립트 핵심 계약서](docs/SEO-SCRIPT-CONTRACT.md)
@@ -21,7 +21,7 @@ flowchart TD
     Diary[database/YYMMDD.html<br/>일기 HTML 및 본문 원본]
     Photos[picture/섹터/사진파일<br/>사진 원본]
     Descriptions[pictures.js<br/>사진 설명]
-    Generator[scripts/update-seo.ps1<br/>수집 · 파싱 · 정적 페이지 생성]
+    Generator[scripts/build-static-site.ps1<br/>수집 · 파싱 · 정적 페이지 생성]
     DiaryList[database.js<br/>일기 파일 목록]
     PhotoList[pictures.js<br/>사진 파일 목록 + 설명]
     Pages[index · archive · diary · gallery HTML]
@@ -59,7 +59,7 @@ git push
 
 ## 페이지가 만들어지는 과정
 
-1. `update-seo.ps1`이 `database/`의 일기 파일과 `picture/` 아래 섹터 폴더·사진을 검색합니다.
+1. `build-static-site.ps1`이 `database/`의 일기 파일과 `picture/` 아래 섹터 폴더·사진을 검색합니다.
 2. 일기 날짜와 사진 파일 목록을 검증하고, 기존 사진 설명을 읽습니다.
 3. `database.js`, `pictures.js`의 목록을 실제 파일 구성에 맞춰 다시 생성합니다.
 4. 일기별 HTML 페이지와 홈·전체 일기·사진 갤러리의 초기 정적 본문을 만듭니다.
@@ -70,7 +70,7 @@ git push
 
 이 과정에서 HTML 페이지, 메타 정보, 파일 목록, 사이트맵은 자동으로 다시 작성됩니다. 잘못된 입력이 발견되면 생성 파일을 쓰기 전에 중단합니다. 실제 파일 교체 단계에서 오류가 나면 기존 출력 파일을 복원하며, 복원까지 실패한 경우 복구용 백업 경로를 오류에 표시합니다.
 
-### `update-seo.ps1` 내부 처리 단위
+### `build-static-site.ps1` 내부 처리 단위
 
 | 순서 | 처리 | 입력과 결과 |
 |---|---|---|
@@ -130,7 +130,7 @@ HTML 예시:
 
 `a`, `abbr`, `article`, `aside`, `b`, `blockquote`, `br`, `cite`, `code`, `dd`, `del`, `div`, `dl`, `dt`, `em`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `header`, `hr`, `i`, `img`, `kbd`, `li`, `mark`, `ol`, `p`, `pre`, `q`, `rp`, `rt`, `ruby`, `s`, `samp`, `section`, `small`, `span`, `strong`, `sub`, `sup`, `table`, `tbody`, `td`, `th`, `thead`, `time`, `tr`, `u`, `ul`, `var`, `wbr`.
 
-`<a>`에는 `href`, `<img>`에는 `src`를 지정해야 합니다. `<script>`, `<style>`, `<iframe>` 등 페이지 실행·틀을 바꿀 수 있는 요소, `onclick` 같은 이벤트 속성, 인라인 `style`, `javascript:` 주소는 거부합니다. 새 태그가 꼭 필요하다면 `scripts/update-seo.ps1`의 `Assert-DiaryMarkup` 허용 목록에 의도와 안전성을 검토한 뒤 추가합니다.
+`<a>`에는 `href`, `<img>`에는 `src`를 지정해야 합니다. `<script>`, `<style>`, `<iframe>` 등 페이지 실행·틀을 바꿀 수 있는 요소, `onclick` 같은 이벤트 속성, 인라인 `style`, `javascript:` 주소는 거부합니다. 새 태그가 꼭 필요하다면 `scripts/build-static-site.ps1`의 `Assert-DiaryMarkup` 허용 목록에 의도와 안전성을 검토한 뒤 추가합니다.
 
 ### 스크립트가 읽는 HTML 영역
 
@@ -198,7 +198,7 @@ picture/
 |---|---|---|
 | `database/YYMMDD.html` | 일기 본문 원본이자 일기별 정적 페이지 | 본문 편집 |
 | `picture/섹터/` | 사진 원본 | 파일 추가·삭제 |
-| `scripts/update-seo.ps1` | 원본 검색, 파싱, 정적 HTML·메타·사이트맵 생성 | 동작 변경 시 편집 |
+| `scripts/build-static-site.ps1` | 원본 검색, 파싱, 검증, 정적 HTML·메타·사이트맵 생성 | 동작 변경 시 편집 |
 | `docs/SEO-SCRIPT-CONTRACT.md` | 입력 인터페이스·생성 결과·거부·복구 규칙의 기준 설계 문서 | 기능 계약 변경 시 함께 편집 |
 | `scripts/manifest.ps1` | `pictures.js` 같은 JavaScript 배열을 실행하지 않고 읽고, 목록 형식을 검증하는 공통 함수 | 보통 편집하지 않음 |
 | `scripts/test-seo.ps1` | 생성된 페이지·canonical·구조화 데이터·사이트맵·로컬 링크를 빠르게 확인 | 선택적으로 실행 |
