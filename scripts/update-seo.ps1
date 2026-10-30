@@ -85,6 +85,14 @@ function Convert-DiaryLinkMarkers([string]$html) {
     $parsed = Extract-DiaryLinkMarkers $html
     return $parsed.Content + ($parsed.Links -join '')
 }
+function Convert-PlainDiaryText([string]$content) {
+    if ($content -match '(?is)<[a-z][^>]*>') { return $content }
+    $paragraphs = [regex]::Split($content.Trim(), '\r?\n[\t ]*\r?\n+') | Where-Object { $_.Trim() }
+    return (@($paragraphs | ForEach-Object {
+        $lines = $_ -split '\r?\n' | ForEach-Object { Escape-Html $_.Trim() }
+        '<p>' + ($lines -join '<br>') + '</p>'
+    }) -join "`n")
+}
 
 function Render-Shell([string]$heading, [string]$body, [string]$navigation) {
     @"
@@ -155,6 +163,7 @@ $posts = for ($i = 0; $i -lt $ids.Count; $i++) {
     }
     $parsedLinks = Extract-DiaryLinkMarkers $content
     $content = $parsedLinks.Content
+    $content = Convert-PlainDiaryText $content
     if ($null -ne $references) { $references = Convert-DiaryLinkMarkers $references }
     if ($parsedLinks.Links.Count) {
         $references = (@($references) + @($parsedLinks.Links) | Where-Object { $null -ne $_ }) -join ''
