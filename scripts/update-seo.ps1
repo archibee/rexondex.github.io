@@ -5,41 +5,59 @@ $ErrorActionPreference = 'Stop'
 $siteRoot = [IO.Path]::GetFullPath($SiteRoot)
 . (Join-Path $PSScriptRoot 'manifest.ps1')
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+$script:pendingFiles = [ordered]@{}
 function Read-SiteFile([string]$path) {
     [System.IO.File]::ReadAllText((Join-Path $siteRoot $path), [System.Text.Encoding]::UTF8)
 }
 function Write-SiteFile([string]$path, [string]$content) {
-    $target = Join-Path $siteRoot $path
-    [System.IO.Directory]::CreateDirectory((Split-Path $target -Parent)) | Out-Null
-    [System.IO.File]::WriteAllText($target, $content, $utf8)
+    # Keep generated output in memory until every source page has passed validation.
+    $script:pendingFiles[$path] = $content
 }
 function Escape-Html([string]$value) { [System.Net.WebUtility]::HtmlEncode($value) }
 
+$databaseRoot = Join-Path $siteRoot 'database'
+if (!(Test-Path -LiteralPath $databaseRoot -PathType Container)) { throw "Diary folder not found: '$databaseRoot'. Create database/ and add a valid YYMMDD.html file." }
+$diaryFolders = @(Get-ChildItem -LiteralPath $databaseRoot -Directory | Where-Object { $_.Name -match '^[0-9]{6}\.html$' })
+if ($diaryFolders.Count) { throw "'$($diaryFolders[0].FullName)' is a folder, but diary entries must be HTML files. Put the diary content in a file named YYMMDD.html." }
 $diaryFiles = @{}
-foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $siteRoot 'database') -File)) {
+foreach ($file in (Get-ChildItem -LiteralPath $databaseRoot -File)) {
     if ($file.Name -notmatch '^([0-9]{6})\.html$') { continue }
     $id = $Matches[1]
-    [void][datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+    try { [void][datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture) }
+    catch { throw "Invalid diary date in '$($file.Name)'. Use a real date in YYMMDD.html format (example: 261030.html)." }
     $diaryFiles[$id] = $file.Name
 }
 $ids = @($diaryFiles.Keys | Sort-Object -Descending)
-if (!$ids.Count) { throw 'No YYMMDD.html diary files found in database/.' }
+if (!$ids.Count) { throw "No publishable diaries found in '$databaseRoot'. Add a real-date YYMMDD.html file; drafts must use another name." }
 
 # Preserve manually written photo descriptions while discovering files on disk.
 $previousSectors = @{}
 if (Test-Path -LiteralPath (Join-Path $siteRoot 'pictures.js')) {
-    foreach ($sector in @(Read-ManifestArray (Read-SiteFile 'pictures.js') 'PICTURE_SECTORS')) { $previousSectors[$sector.id] = $sector }
+    try {
+        foreach ($sector in @(Read-ManifestArray (Read-SiteFile 'pictures.js') 'PICTURE_SECTORS')) { $previousSectors[$sector.id] = $sector }
+    } catch { throw "Could not read photo descriptions from 'pictures.js'. Restore its generated array or fix its syntax: $($_.Exception.Message)" }
 }
 $imagePattern = '^[^/\\]+\.(jpe?g|png|webp|gif|avif|heic)$'
+$imageLikePattern = '\.(jpe?g|png|webp|gif|avif|heic|bmp|svg|tiff?|ico|jfif|apng)$'
 $pictureRoot = Join-Path $siteRoot 'picture'
-if (!(Test-Path -LiteralPath $pictureRoot)) { [void][IO.Directory]::CreateDirectory($pictureRoot) }
-if (Get-ChildItem -LiteralPath $pictureRoot -File | Where-Object { $_.Name -match $imagePattern }) {
-    throw 'Place photos inside a sector folder, for example picture/sector-1/photo.jpg.'
+$sectorFolders = @()
+if (Test-Path -LiteralPath $pictureRoot -PathType Container) {
+    if (Get-ChildItem -LiteralPath $pictureRoot -File | Where-Object { $_.Name -match $imageLikePattern }) {
+        throw 'Photos must be inside a sector folder. Move them to picture/sector-1/photo.jpg (or another sector folder).'
+    }
+    $sectorFolders = @(Get-ChildItem -LiteralPath $pictureRoot -Directory | Sort-Object { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })
 }
-$discoveredSectors = @(foreach ($folder in (Get-ChildItem -LiteralPath $pictureRoot -Directory | Sort-Object { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })) {
-    $files = @(Get-ChildItem -LiteralPath $folder.FullName -File | Where-Object { $_.Name -match $imagePattern } | Sort-Object { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(30, '0') }) } -Descending | ForEach-Object { $_.Name })
+$discoveredSectors = @(foreach ($folder in $sectorFolders) {
+    $directFiles = @(Get-ChildItem -LiteralPath $folder.FullName -File)
+    $files = @($directFiles | Where-Object { $_.Name -match $imagePattern } | Sort-Object { [regex]::Replace($_.Name, '\d+', { param($m) $m.Value.PadLeft(30, '0') }) } -Descending | ForEach-Object { $_.Name })
+    $unsupportedImages = @($directFiles | Where-Object { $_.Name -match $imageLikePattern -and $_.Name -notmatch $imagePattern })
+    if ($unsupportedImages.Count) { throw "Unsupported photo format '$($unsupportedImages[0].FullName)'. Use JPG, JPEG, PNG, WebP, GIF, AVIF or HEIC." }
+    $nestedImages = @(Get-ChildItem -LiteralPath $folder.FullName -File -Recurse | Where-Object { $_.DirectoryName -ne $folder.FullName -and $_.Name -match $imageLikePattern })
+    if ($nestedImages.Count) {
+        throw "Nested photo folders are not supported. Move '$($nestedImages[0].FullName)' directly into '$($folder.FullName)'."
+    }
     if ($folder.Name -notmatch '^[a-zA-Z0-9-]+$') {
-        if ($files.Count) { throw "Photo sector names must use letters, numbers or hyphens: $($folder.Name)" }
+        if ($files.Count -or $unsupportedImages.Count) { throw "Photo sector '$($folder.Name)' has an invalid name. Rename the folder using only letters, numbers and hyphens." }
         continue
     }
     $descriptions = [ordered]@{}
@@ -65,6 +83,47 @@ function Read-DiarySection([string]$html, [string]$className) {
         if ($depth -eq 0) { return $html.Substring($start, $tag.Index) }
     }
     throw "Unclosed $className div."
+}
+function Count-DiarySections([string]$html, [string]$className) {
+    return [regex]::Matches($html, '(?is)<div\b(?=[^>]*\bclass\s*=\s*["''][^"'']*\b' + $className + '\b[^"'']*["''])[^>]*>').Count
+}
+function Assert-DiaryMarkup([string]$html, [string]$filePath, [string]$sectionName) {
+    $allowedTags = @('a','abbr','article','aside','b','blockquote','br','cite','code','dd','del','div','dl','dt','em','figcaption','figure','footer','h1','h2','h3','h4','h5','h6','header','hr','i','img','kbd','li','mark','ol','p','pre','q','rp','rt','ruby','s','samp','section','small','span','strong','sub','sup','table','tbody','td','th','thead','time','tr','u','ul','var','wbr')
+    $voidTags = @('area','br','col','hr','img','input','source','track','wbr')
+    $stack = [System.Collections.Generic.List[string]]::new()
+    $tokens = [regex]::Matches($html, '(?is)<!--.*?-->|<![^>]*>|</?[a-z][a-z0-9:-]*\b[^>]*>')
+    foreach ($token in $tokens) {
+        if ($token.Value.StartsWith('<!--') -or $token.Value.StartsWith('<!')) { continue }
+        $parsedTag = [regex]::Match($token.Value, '(?is)^<\s*(?<close>/)?\s*(?<name>[a-z][a-z0-9:-]*)')
+        $name = $parsedTag.Groups['name'].Value.ToLowerInvariant()
+        if ($name -in @('script','style','iframe','object','embed','form','base','meta','link','html','head','body','noscript')) {
+            throw "Diary '$filePath' has unsupported <$name> inside $sectionName. Keep page structure in the generator and place only diary content in this section."
+        }
+        if ($name -notin $allowedTags) { throw "Diary '$filePath' uses unsupported <$name> inside $sectionName. Use supported text and layout tags, or add this tag deliberately to the script's allowlist." }
+        if ($token.Value -match '(?i)\son[a-z]+\s*=|\sstyle\s*=|\ssrcdoc\s*=') {
+            throw "Diary '$filePath' has an inline event, style or embedded-document attribute in $sectionName. Remove it to keep generated pages safe and consistent."
+        }
+        $decodedTag = [Net.WebUtility]::HtmlDecode($token.Value)
+        if ($decodedTag -match '(?i)\b(?:href|src)\s*=\s*(?:["'']\s*javascript\s*:|javascript\s*:)') {
+            throw "Diary '$filePath' has a javascript: URL in $sectionName. Use an http:// or https:// link instead."
+        }
+        if ($name -eq 'a' -and !$parsedTag.Groups['close'].Success -and $token.Value -notmatch '(?i)\bhref\s*=') {
+            throw "Diary '$filePath' has an <a> without href in $sectionName. Add href or remove the link tag."
+        }
+        if ($name -eq 'img' -and !$parsedTag.Groups['close'].Success -and $token.Value -notmatch '(?i)\bsrc\s*=') {
+            throw "Diary '$filePath' has an <img> without src in $sectionName. Add an image path or remove the image tag."
+        }
+        if ($parsedTag.Groups['close'].Success) {
+            if ($name -in $voidTags -or !$stack.Count -or $stack[$stack.Count - 1] -ne $name) {
+                $expected = if ($stack.Count) { "</$($stack[$stack.Count - 1])>" } else { 'no closing tag' }
+                throw "Diary '$filePath' has a mismatched </$name> in $sectionName; expected $expected."
+            }
+            $stack.RemoveAt($stack.Count - 1)
+        } elseif ($name -notin $voidTags -and $token.Value -notmatch '/\s*>$') {
+            $stack.Add($name)
+        }
+    }
+    if ($stack.Count) { throw "Diary '$filePath' has an unclosed <$($stack[$stack.Count - 1])> in $sectionName. Add its closing tag." }
 }
 function Extract-DiaryLinkMarkers([string]$html) {
     $links = [System.Collections.Generic.List[string]]::new()
@@ -109,10 +168,32 @@ function Render-Shell([string]$heading, [string]$body, [string]$navigation) {
 }
 # Read the home head as the shared metadata/icon/style template. Runtime scripts are
 # added explicitly in document order; nested pages use a base URL for all assets.
-$template = [regex]::Match((Read-SiteFile 'index.html'), '(?s)<head>(.*?)</head>').Groups[1].Value
-$siteUrl = [regex]::Match($template, '<link rel="canonical" href="([^"]+)"').Groups[1].Value
-if (!$siteUrl.EndsWith('/')) { throw 'Home canonical must end with /.' }
-$graph = (([regex]::Match($template, '(?s)<script type="application/ld\+json">(.*?)</script>').Groups[1].Value | ConvertFrom-Json).'@graph')
+$homeHtml = Read-SiteFile 'index.html'
+$templateMatch = [regex]::Match($homeHtml, '(?s)<head>(.*?)</head>')
+if (!$templateMatch.Success) { throw "Home template 'index.html' has no complete <head> section. Restore a generated home page before running the updater." }
+$template = $templateMatch.Groups[1].Value
+$siteUrlMatch = [regex]::Match($template, '<link rel="canonical" href="([^"]+)"')
+if (!$siteUrlMatch.Success) { throw "Home template 'index.html' has no canonical URL. Restore its canonical link before running the updater." }
+$siteUri = $null
+if (![uri]::TryCreate($siteUrlMatch.Groups[1].Value, [UriKind]::Absolute, [ref]$siteUri) -or $siteUri.Scheme -ne 'https' -or !$siteUri.AbsoluteUri.EndsWith('/')) {
+    throw "Home canonical in 'index.html' must be an absolute HTTPS URL ending in / (example: https://example.github.io/)."
+}
+$requiredHeadPatterns = @(
+    @{ Name = 'title'; Pattern = '(?is)<title\b.*?</title>' },
+    @{ Name = 'meta description'; Pattern = '(?i)<meta\s+name="description"\s+content="[^"]*"\s*/?>' },
+    @{ Name = 'robots directive'; Pattern = '(?i)<meta\s+name="robots"\s+content="[^"]*"\s*/?>' },
+    @{ Name = 'Open Graph URL'; Pattern = '(?i)<meta\s+property="og:url"\s+content="[^"]*"\s*/?>' },
+    @{ Name = 'Twitter title'; Pattern = '(?i)<meta\s+name="twitter:title"\s+content="[^"]*"\s*/?>' }
+)
+foreach ($required in $requiredHeadPatterns) {
+    if ([regex]::Matches($template, $required.Pattern).Count -ne 1) { throw "Home template 'index.html' must contain exactly one $($required.Name) tag. Restore a generated head before running the updater." }
+}
+$siteUrl = $siteUri.AbsoluteUri
+$graphMatch = [regex]::Match($template, '(?s)<script type="application/ld\+json">(.*?)</script>')
+if (!$graphMatch.Success) { throw "Home template 'index.html' has no JSON-LD block. Restore a generated home page before running the updater." }
+try { $graph = (($graphMatch.Groups[1].Value | ConvertFrom-Json).'@graph') }
+catch { throw "Could not parse JSON-LD in 'index.html': $($_.Exception.Message)" }
+if (!$graph) { throw "Home template 'index.html' has no JSON-LD @graph. Restore its structured data before running the updater." }
 $template = [regex]::Replace($template, '(?s)\s*<script\b.*?</script>', '')
 $template = [regex]::Replace($template, '\s*<base\b[^>]*>', '')
 $template = $template.Trim()
@@ -155,19 +236,45 @@ $posts = for ($i = 0; $i -lt $ids.Count; $i++) {
     $id = $ids[$i]
     $path = "database/$($diaryFiles[$id])"
     $html = Read-SiteFile $path
-    $content = Read-DiarySection $html 'post-content'
-    $references = Read-DiarySection $html 'post-references'
+    $isFullDocument = $html -match '(?i)<(?:html|head|body)\b|<!doctype'
+    $contentCount = Count-DiarySections $html 'post-content'
+    $referenceCount = Count-DiarySections $html 'post-references'
+    if ($contentCount -gt 1) { throw "Diary '$path' has $contentCount .post-content sections. Keep exactly one body section." }
+    if ($referenceCount -gt 1) { throw "Diary '$path' has $referenceCount .post-references sections. Keep at most one reference section." }
+    if ($isFullDocument -and $contentCount -ne 1) { throw "Diary '$path' is a full HTML document but has no .post-content section. Add exactly one <div class='post-content'> around the diary body." }
+    if ($isFullDocument) {
+        foreach ($tagName in @('html','head','body')) {
+            if ([regex]::Matches($html, '(?i)<\s*' + $tagName + '\b').Count -ne 1 -or [regex]::Matches($html, '(?i)</\s*' + $tagName + '\s*>').Count -ne 1) {
+                throw "Diary '$path' has an incomplete or duplicated <$tagName> document section. Keep one matching opening and closing <$tagName> tag, or use an HTML fragment instead."
+            }
+        }
+    }
+    try {
+        $content = Read-DiarySection $html 'post-content'
+        $references = Read-DiarySection $html 'post-references'
+    } catch {
+        throw "Could not parse diary '$path': $($_.Exception.Message)"
+    }
     if ($null -eq $content) {
-        if ($html -match '(?i)<(?:html|head|body)\b|<!doctype') { throw "Missing .post-content in $path" }
         $content = $html.Trim()
     }
+    if ([regex]::IsMatch($content, '(?is)<[^>]*\[\[[^>]*>')) {
+        throw "Diary '$path' has a [[ link marker inside an HTML tag or attribute. Put [[https://...]] in the visible body text instead."
+    }
+    Assert-DiaryMarkup $content $path '.post-content'
+    if ($null -ne $references) { Assert-DiaryMarkup $references $path '.post-references' }
     $parsedLinks = Extract-DiaryLinkMarkers $content
+    if ($parsedLinks.Content -match '\[\[') { throw "Diary '$path' has an unrecognized [[ link marker. Use [[https://example.com]] or [[링크|https://example.com|label]]." }
     $content = $parsedLinks.Content
     $content = Convert-PlainDiaryText $content
-    if ($null -ne $references) { $references = Convert-DiaryLinkMarkers $references }
+    if ($null -ne $references) {
+        $references = Convert-DiaryLinkMarkers $references
+        if ($references -match '\[\[') { throw "Diary '$path' has an unrecognized [[ link marker in .post-references. Use [[https://example.com]] or a complete HTML <a href='...'> link." }
+    }
     if ($parsedLinks.Links.Count) {
         $references = (@($references) + @($parsedLinks.Links) | Where-Object { $null -ne $_ }) -join ''
     }
+    if (!$content.Trim()) { throw "Diary '$path' has an empty body. Add diary text or rename it as a draft so it is not published." }
     $date = [datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
     $iso = $date.ToString('yyyy-MM-dd')
     $label = $date.ToString('yyyy년 M월 d일', $culture)
@@ -217,7 +324,7 @@ foreach ($id in $ids) {
     $sitemapEntries.Add("<url><loc>$($siteUrl)database/$($diaryFiles[$id])</loc></url>")
 }
 
-$sectors = @(Read-ManifestArray (Read-SiteFile 'pictures.js') 'PICTURE_SECTORS' | Sort-Object { [regex]::Replace($_.id, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })
+$sectors = @(($pictureJson | ConvertFrom-Json) | Sort-Object { [regex]::Replace($_.id, '\d+', { param($m) $m.Value.PadLeft(20, '0') }) })
 for ($i = 0; $i -lt $sectors.Count; $i++) {
     $sector = $sectors[$i]
     if ($sector.id -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid picture sector ID.' }
@@ -249,4 +356,54 @@ for ($i = 0; $i -lt $sectors.Count; $i++) {
     $sitemapEntries.Add("<url><loc>$siteUrl$path</loc>$($imageEntries -join '')</url>")
 }
 Write-SiteFile 'sitemap.xml' ('<?xml version="1.0" encoding="UTF-8"?>' + "`n" + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' + "`n" + ($sitemapEntries -join "`n") + "`n</urlset>`n")
+# All parsing and generation completed in memory. Stage every output and backup before replacing any file.
+$writeId = [guid]::NewGuid().ToString('N')
+$transactions = [System.Collections.Generic.List[object]]::new()
+$commitComplete = $false
+$rollbackComplete = $true
+try {
+    foreach ($path in $script:pendingFiles.Keys) {
+        $target = Join-Path $siteRoot $path
+        if (Test-Path -LiteralPath $target -PathType Container) { throw "Cannot write generated file '$path' because a folder exists at that file path. Rename or move the conflicting folder, then retry." }
+        [System.IO.Directory]::CreateDirectory((Split-Path $target -Parent)) | Out-Null
+        $item = [pscustomobject]@{
+            Path = $path; Target = $target
+            Temp = "$target.seo-tmp-$writeId"
+            Backup = "$target.seo-backup-$writeId"
+            HadOriginal = [System.IO.File]::Exists($target)
+            Applied = $false
+        }
+        $transactions.Add($item)
+        [System.IO.File]::WriteAllText($item.Temp, $script:pendingFiles[$path], $utf8)
+        if ($item.HadOriginal) { [System.IO.File]::Copy($target, $item.Backup, $false) }
+    }
+    foreach ($item in $transactions) {
+        $item.Applied = $true
+        Move-Item -LiteralPath $item.Temp -Destination $item.Target -Force
+    }
+    $commitComplete = $true
+} catch {
+    $writeError = $_.Exception.Message
+    for ($i = $transactions.Count - 1; $i -ge 0; $i--) {
+        $item = $transactions[$i]
+        if (!$item.Applied) { continue }
+        try {
+            if ($item.HadOriginal -and [System.IO.File]::Exists($item.Backup)) {
+                [System.IO.File]::Copy($item.Backup, $item.Target, $true)
+            } elseif (!$item.HadOriginal -and [System.IO.File]::Exists($item.Target)) {
+                [System.IO.File]::Delete($item.Target)
+            }
+        } catch { $rollbackComplete = $false }
+    }
+    if (!$rollbackComplete) {
+        $recovery = @($transactions | Where-Object { [System.IO.File]::Exists($_.Backup) } | ForEach-Object { $_.Backup }) -join ', '
+        throw "Could not finish writing generated files: $writeError. Automatic rollback was incomplete; original backups were retained at: $recovery"
+    }
+    throw "Could not write generated files: $writeError. Existing outputs were restored; fix the filesystem issue and run the command again."
+} finally {
+    foreach ($item in $transactions) {
+        try { if ([System.IO.File]::Exists($item.Temp)) { [System.IO.File]::Delete($item.Temp) } } catch { Write-Warning "Could not remove temporary file '$($item.Temp)': $($_.Exception.Message)" }
+        try { if (($commitComplete -or $rollbackComplete) -and [System.IO.File]::Exists($item.Backup)) { [System.IO.File]::Delete($item.Backup) } } catch { Write-Warning "Could not remove temporary backup '$($item.Backup)': $($_.Exception.Message)" }
+    }
+}
 Write-Output "Updated snapshots and sitemap for $($ids.Count) existing HTML diaries and $($sectors.Count) galleries."
