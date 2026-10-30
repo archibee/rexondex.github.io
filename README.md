@@ -43,6 +43,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-seo.ps1
 </div>
 ```
 
+본문에 URL을 바로 링크로 만들려면 `[[https://example.com]]`처럼 작성합니다. 스크립트가 URL을 HTML 링크로 바꾸며, 화면에는 URL이 링크 버튼으로 표시됩니다. 표시 문구를 따로 쓰려면 `[[링크|주소|표시문구]]` 형식을 사용할 수 있습니다.
+
+```text
+[[https://www.threads.com/share/GVr822nNv/]]
+
+본문내용
+```
+
+이 표기는 `.post-content` 안이나 본문 조각의 단독 줄에 작성할 수 있습니다. 기존 HTML `<a href="...">...</a>` 방식도 그대로 쓸 수 있습니다.
+
 - 등록 대상은 `database/` 바로 아래의 **숫자 6자리 + `.html`** 파일입니다. 날짜는 실제 존재해야 합니다.
 - 해당 형식의 파일은 모두 등록됩니다. 미공개 초안은 다른 폴더에 두거나 `draft-261030.html`처럼 다른 이름을 사용합니다.
 - 날짜·제목·canonical·공유 정보·구조화 데이터·전후 일기 링크는 자동 구성합니다.

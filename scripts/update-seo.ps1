@@ -66,6 +66,17 @@ function Read-DiarySection([string]$html, [string]$className) {
     }
     throw "Unclosed $className div."
 }
+function Convert-DiaryLinkMarkers([string]$html) {
+    return [regex]::Replace($html, '\[\[(?:(?<bare>https?://[^\]\s]+)|링크\|(?<url>https?://[^|\]\s]+)(?:\|(?<label>[^\]\r\n]+))?)\]\]', [System.Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        $rawUrl = if ($match.Groups['bare'].Success) { $match.Groups['bare'].Value } else { $match.Groups['url'].Value }
+        $url = Escape-Html $rawUrl
+        if ($match.Groups['label'].Success) { $label = Escape-Html $match.Groups['label'].Value }
+        elseif ($match.Groups['bare'].Success) { $label = $url }
+        else { $label = '링크' }
+        '<a class="post-reference" href="' + $url + '">' + $label + '</a>'
+    })
+}
 
 function Render-Shell([string]$heading, [string]$body, [string]$navigation) {
     @"
@@ -134,6 +145,8 @@ $posts = for ($i = 0; $i -lt $ids.Count; $i++) {
         if ($html -match '(?i)<(?:html|head|body)\b|<!doctype') { throw "Missing .post-content in $path" }
         $content = $html.Trim()
     }
+    $content = Convert-DiaryLinkMarkers $content
+    if ($null -ne $references) { $references = Convert-DiaryLinkMarkers $references }
     $date = [datetime]::ParseExact("20$id", 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
     $iso = $date.ToString('yyyy-MM-dd')
     $label = $date.ToString('yyyy년 M월 d일', $culture)
