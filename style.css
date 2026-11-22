@@ -43,7 +43,6 @@ svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width:
 .picture-sector-nav :is(button, a):hover { background: var(--surface-2); color: var(--text); }
 .picture-sector-nav :is(button, a).active { border-color: var(--border-strong); background: var(--surface-2); color: var(--text); font-weight: 700; }
 .picture-sector-nav small { color: var(--muted); font-size: 10px; }
-.picture-count { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
 .picture-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin-inline: var(--content-gutter); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--border); box-shadow: var(--shadow-panel); }
 .picture-grid:empty { display: none; }
 .picture-tile { position: relative; display: block; overflow: hidden; aspect-ratio: 1; padding: 0; border: 0; background: var(--surface-2); }

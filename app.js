@@ -201,7 +201,7 @@
         initialPosts.push(this.renderFeedEntry(id, parseDiaryHtml(post.outerHTML)));
       }
       this.root.innerHTML = this.shell();
-      this.els = Object.fromEntries(['feedView', 'pictureView', 'pictureSectorNav', 'pictureCount', 'pictureGrid', 'pictureEmpty', 'pictureDialog', 'pictureDialogImage', 'pictureDialogSector', 'pictureDialogName', 'pictureDialogSize', 'pictureDialogOriginal', 'pictureDialogClose', 'feedList', 'feedMore', 'calendarView', 'profileView', 'settingsView', 'yearNav', 'monthNav', 'calendar', 'calendarTitle', 'monthMeta', 'mobileViewTitle'].map((id) => [id, document.getElementById(id)]));
+      this.els = Object.fromEntries(['feedView', 'pictureView', 'pictureSectorNav', 'pictureGrid', 'pictureEmpty', 'pictureDialog', 'pictureDialogImage', 'pictureDialogSector', 'pictureDialogName', 'pictureDialogSize', 'pictureDialogOriginal', 'pictureDialogClose', 'feedList', 'feedMore', 'calendarView', 'profileView', 'settingsView', 'yearNav', 'monthNav', 'calendar', 'calendarTitle', 'monthMeta', 'mobileViewTitle'].map((id) => [id, document.getElementById(id)]));
       this.els.feedList.innerHTML = initialPosts.join('');
       this.feedCursor = initialPosts.length;
       this.els.feedMore.hidden = this.feedCursor >= this.feedIds.length;
@@ -231,7 +231,7 @@
         <section class="view feed-view" id="feedView" aria-labelledby="feedTitle"><header class="view-header"><h1 id="feedTitle">일기</h1></header><div id="feedList"></div><button class="feed-more" id="feedMore" type="button">이전 기록 더 보기</button><footer class="diary-post">${this.entryNavigation || '<a href="./archive.html">전체 일기 보기</a>'}</footer></section>
         <section class="view picture-view" id="pictureView" aria-labelledby="pictureTitle" hidden>
           <header class="view-header"><h1 id="pictureTitle">사진</h1></header>
-          <div class="picture-toolbar"><nav class="picture-sector-nav" id="pictureSectorNav" aria-label="사진 섹터"></nav><span class="picture-count" id="pictureCount"></span></div>
+          <div class="picture-toolbar"><nav class="picture-sector-nav" id="pictureSectorNav" aria-label="사진 섹터"></nav></div>
           <div class="picture-grid" id="pictureGrid" aria-label="사진 목록"></div>
           <p class="picture-empty" id="pictureEmpty" hidden>이 섹터에는 등록된 사진이 없습니다.</p>
         </section>
@@ -302,12 +302,10 @@
     renderPictures() {
       const sector = this.pictureSectors.find((item) => item.id === this.activePictureSector);
       if (!sector) {
-        this.els.pictureCount.textContent = '0장';
         this.els.pictureGrid.innerHTML = '';
         this.els.pictureEmpty.hidden = false;
         return;
       }
-      this.els.pictureCount.textContent = `${sector.files.length}장`;
       this.els.pictureEmpty.hidden = sector.files.length > 0;
       this.els.pictureGrid.innerHTML = sector.files.map((file, index) => `<a href="${escapeHtml(this.picturePath(sector.id, file))}" class="picture-tile" data-picture-index="${index}" aria-label="${escapeHtml(sector.descriptions[file] || `${sector.id}/${file} 사진 크게 보기`)}"><img src="${escapeHtml(sector.thumbnails.includes(file) ? `./thumbnails/${encodeURIComponent(sector.id)}/${encodeURIComponent(file)}.webp` : this.picturePath(sector.id, file))}" alt="${escapeHtml(sector.descriptions[file] || '')}" decoding="async"></a>`).join('');
       this.els.pictureGrid.querySelectorAll('img').forEach((image) => image.addEventListener('error', () => {

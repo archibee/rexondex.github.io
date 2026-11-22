@@ -118,7 +118,7 @@ try {
       const src = `./media/${sector.id}/${encodeURIComponent(f)}`, thumb = sector.thumbnails.includes(f) ? `./thumbnails/${sector.id}/${encodeURIComponent(f)}.webp` : src, alt = escape(sector.descriptions[f] || ''), label = alt || escape(`${sector.id}/${f} 사진 크게 보기`);
       return `<a class="picture-tile" href="${src}" aria-label="${label}"><img src="${thumb}" alt="${alt}" decoding="async"></a>`;
     });
-    const content = `<div class="picture-toolbar"><nav class="picture-sector-nav" aria-label="사진 섹터">${navigation}</nav><span>${sector.files.length}장</span></div><div class="picture-grid">${images.join('\n')}</div>`;
+    const content = `<div class="picture-toolbar"><nav class="picture-sector-nav" aria-label="사진 섹터">${navigation}</nav></div><div class="picture-grid">${images.join('\n')}</div>`;
     const entity = { '@type':'CollectionPage', name:`rexondex 사진 ${sector.id}`, url:site+name, inLanguage:'ko' };
     page(name, `사진 ${sector.id} | rexondex Archive`, `rexondex의 ${sector.id} 사진 아카이브입니다. ${sector.files.length}장의 사진을 둘러보고 원본을 열어볼 수 있습니다.`, shell('사진', content, '<a href="./">일기장으로 돌아가기</a>').replace('view feed-view','view picture-view'), `data-initial-view="picture" data-picture-sector="${sector.id}"`, entity);
     urls.push(`<url><loc>${site}${name}</loc>${sector.files.filter(f => !/\.heic$/i.test(f)).map(f => `<image:image><image:loc>${site}media/${sector.id}/${encodeURIComponent(f)}</image:loc></image:image>`).join('')}</url>`);
