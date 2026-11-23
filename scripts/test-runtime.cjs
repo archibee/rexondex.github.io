@@ -1,11 +1,12 @@
-// Run with Node.js 18+; no package installation or network access is needed.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { parseFragment } = require('parse5');
+const { attr, elements, text } = require('./site-html.cjs');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+const source = fs.readFileSync(path.join(process.argv[2] || path.join(__dirname, '..'), 'app.js'), 'utf8');
 const boot = '  const diaryFiles = window.DIARY_FILES || [];';
 assert.ok(source.includes(boot), 'Test hook must precede application startup');
 const testSource = source.replace(boot, '  globalThis.testClasses = { ThemeManager, ArchiveApp, HttpDiaryRepository }; return;\n' + boot);
@@ -32,7 +33,7 @@ function load(storageDescriptor = { value: null }) {
     }
   }
   const context = vm.createContext({ window, document, DOMParser, URL, EventTarget, console: { warn() {} } });
-  vm.runInContext(testSource, context);
+  vm.runInContext(testSource, context, { filename: 'app.js', timeout: 2000 });
   return { ...context.testClasses, context, window, document, preference, elements };
 }
 
@@ -69,6 +70,51 @@ function makeFeed(env, ids) {
     els: { feedList: env.document.getElementById('feedList'), feedMore: env.document.getElementById('feedMore') } });
   return app;
 }
+
+test('app.js shell exposes the IDs, navigation and gallery routes used at runtime', () => {
+  const env = load();
+  const app = makeFeed(env, ['261101']);
+  app.archive.ids = ['261101'];
+  app.archive.years = [2026];
+  app.entryId = '261101';
+  app.activeView = 'feed';
+  const parseErrors = [];
+  const fragment = parseFragment(app.shell(), { onParseError: error => parseErrors.push(error.code) });
+  assert.deepEqual(parseErrors, [], 'Malformed app.js shell HTML');
+  const idNodes = elements(fragment, node => attr(node, 'id') !== undefined);
+  const ids = new Set(idNodes.map(node => attr(node, 'id')));
+  assert.equal(ids.size, idNodes.length, 'Duplicate app.js shell ID');
+  for (const node of elements(fragment, item => attr(item, 'aria-labelledby') !== undefined)) {
+    for (const id of attr(node, 'aria-labelledby').trim().split(/\s+/)) assert.ok(ids.has(id), `Missing aria-labelledby target #${id}`);
+  }
+  const items = elements(parseFragment(app.navItems()), node => attr(node, 'data-view') !== undefined);
+  const views = items.map(node => attr(node, 'data-view'));
+  assert.deepEqual(views, ['feed', 'picture', 'calendar', 'profile', 'settings'], 'Navigation view list differs from the site layout');
+  for (const item of items) {
+    const view = attr(item, 'data-view');
+    assert.ok(ids.has(`${view}View`), `Navigation view '${view}' has no matching section`);
+    const icons = elements(item, node => node.tagName === 'svg');
+    assert.ok(icons.length === 1 && elements(icons[0], () => true).length && !text(icons[0]).includes('undefined'), `Navigation icon missing for '${view}'`);
+  }
+  const getElement = env.document.getElementById;
+  env.document.getElementById = id => {
+    assert.ok(ids.has(id), `Missing runtime element #${id}`);
+    return getElement(id);
+  };
+  app.root = { querySelector: () => null, querySelectorAll: () => [{ id: 'daily-261101', outerHTML: '<div class="post-content"><p>Diary</p></div>' }] };
+  for (const method of ['bind', 'renderPictureSectors', 'renderCalendar', 'renderYears', 'renderMonths', 'renderNavState', 'loadReferences']) app[method] = () => {};
+  try { app.mount(); }
+  catch (error) {
+    if (/Missing runtime element #\w+View$/.test(error.message)) assert.fail(`app.js showView list: ${error.message}`);
+    throw error;
+  }
+  for (const view of views) {
+    app.showView(view);
+    assert.ok(app.els.mobileViewTitle.textContent, `Missing title for ${view}`);
+    for (const name of views) assert.equal(getElement(`${name}View`).hidden, name !== view, 'app.js showView list does not match navigation views');
+  }
+  assert.equal(app.picturePath('PIC-1', '사진 1.jpg'), './media/PIC-1/%EC%82%AC%EC%A7%84%201.jpg', 'Gallery originals must use media/<sector>/<file>');
+});
 
 test('SSG posts survive startup without diary fetches on home, archive and diary pages', () => {
   for (const [count, entryId, allEntries] of [[8, '', false], [10, '', true], [1, '261111', false]]) {

@@ -2,6 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { decodeHTML, escapeAttribute } = require('entities');
 const { readArray } = require('./manifest.cjs');
+const { parse, parseFragment } = require('parse5');
+const { attr, elements, hasClass } = require('./site-html.cjs');
 const imagePattern = /\.(?:jpe?g|png|webp|gif|avif|heic)$/i;
 const imageLike = /\.(?:jpe?g|png|webp|gif|avif|heic|bmp|svg|tiff?|ico|jfif|apng)$/i;
 const natural = (a, b) => a.replace(/\d+/g, n => n.padStart(30, '0')).localeCompare(b.replace(/\d+/g, n => n.padStart(30, '0')), 'en');
@@ -14,30 +16,48 @@ function diaryDate(id) {
   if (date.toISOString().slice(0, 10).replace(/-/g, '') !== '20' + id) throw Error(`Invalid diary date in '${id}.html'.`);
   return date;
 }
-function section(html, name) {
-  const open = new RegExp(`<div\\b(?=[^>]*\\bclass\\s*=\\s*["'][^"']*\\b${name}\\b[^"']*["'])[^>]*>`, 'gi');
-  const matches = [...html.matchAll(open)];
+function section(html, tree, name) {
+  const matches = elements(tree, node => node.tagName === 'div' && hasClass(node, name));
   if (matches.length > 1) throw Error(`Diary has multiple .${name} sections.`);
   if (!matches.length) return null;
-  const start = matches[0].index + matches[0][0].length;
-  const tags = /<div\b[^>]*>|<\/div\s*>/gi; tags.lastIndex = start;
-  let depth = 1, m;
-  while ((m = tags.exec(html))) { depth += /^<\//.test(m[0]) ? -1 : 1; if (!depth) return html.slice(start, m.index); }
-  throw Error(`Unclosed ${name} div.`);
+  const location = matches[0].sourceCodeLocation;
+  if (!location?.endTag) throw Error(`Unclosed ${name} div.`);
+  return html.slice(location.startTag.endOffset, location.endTag.startOffset);
 }
+const markup = /<!--[\s\S]*?-->|<![^>]*>|<\/?[a-z][a-z0-9:-]*(?=[\t\n\f\r />])(?:"[^"]*"|'[^']*'|[^"'<>])*?>/gi;
+const allowed = new Set('a abbr article aside b blockquote br cite code dd del div dl dt em figcaption figure footer h1 h2 h3 h4 h5 h6 header hr i img kbd li mark ol p pre q rp rt ruby s samp section small span strong sub sup table tbody td th thead time tr u ul var wbr'.split(' '));
+const voids = new Set('br hr img wbr'.split(' '));
 function assertMarkup(html, file) {
-  const allowed = new Set('a abbr article aside b blockquote br cite code dd del div dl dt em figcaption figure footer h1 h2 h3 h4 h5 h6 header hr i img kbd li mark ol p pre q rp rt ruby s samp section small span strong sub sup table tbody td th thead time tr u ul var wbr'.split(' '));
-  const voids = new Set('br hr img wbr'.split(' ')), stack = [];
-  for (const [tag] of html.matchAll(/<!--[\s\S]*?-->|<![^>]*>|<\/?[a-z][a-z0-9:-]*\b[^>]*>/gi)) {
+  const stack = [];
+  let explicit = 0;
+  for (const [tag] of html.matchAll(markup)) {
     if (/^<!/.test(tag)) continue;
     const m = /^<\s*(\/)?\s*([a-z][a-z0-9:-]*)/i.exec(tag), name = m[2].toLowerCase();
     if (!allowed.has(name)) throw Error(`Diary '${file}' has unsupported <${name}>.`);
-    if (/\son[a-z]+\s*=|\sstyle\s*=|\ssrcdoc\s*=/i.test(tag) || /\b(?:href|src)\s*=\s*(?:["']\s*)?javascript\s*:/i.test(decodeHTML(tag))) throw Error(`Unsafe attribute in diary '${file}'.`);
-    if (!m[1] && ((name === 'a' && !/\bhref\s*=/i.test(tag)) || (name === 'img' && !/\bsrc\s*=/i.test(tag)))) throw Error(`Missing href/src in diary '${file}'.`);
     if (m[1]) { if (voids.has(name) || stack.pop() !== name) throw Error(`Mismatched </${name}> in diary '${file}'.`); }
-    else if (!voids.has(name) && !/\/\s*>$/.test(tag)) stack.push(name);
+    else {
+      explicit++;
+      if (!voids.has(name)) stack.push(name);
+    }
   }
   if (stack.length) throw Error(`Unclosed <${stack.at(-1)}> in diary '${file}'.`);
+  if (!explicit) return;
+  const errors = [];
+  const tree = parseFragment(html, { sourceCodeLocationInfo: true, onParseError: error => errors.push(error) });
+  const parsed = elements(tree, node => Boolean(node.sourceCodeLocation?.startTag));
+  if (errors.length || parsed.length !== explicit || parsed.some(node => !voids.has(node.tagName) && !node.sourceCodeLocation.endTag)) {
+    throw Error(`Invalid HTML nesting in diary '${file}'. Check that the browser can keep the authored structure, including nested links, paragraphs and tables.`);
+  }
+  for (const node of parsed) {
+    if (node.attrs.some(({ name }) => /^on[a-z]/i.test(name) || name === 'style' || name === 'srcdoc')) throw Error(`Unsafe attribute in diary '${file}'.`);
+    for (const name of ['href', 'src']) {
+      const value = attr(node, name)?.replace(/[\t\n\r]/g, '').trim();
+      if (/^(?:javascript|vbscript):/i.test(value || '')) throw Error(`Unsafe URL in diary '${file}'.`);
+    }
+    if ((node.tagName === 'a' && !attr(node, 'href')?.trim()) || (node.tagName === 'img' && !attr(node, 'src')?.trim())) {
+      throw Error(`Missing href/src in diary '${file}'.`);
+    }
+  }
 }
 function links(content) {
   const found = [];
@@ -48,12 +68,20 @@ function links(content) {
   return { content, found };
 }
 function parseDiary(html, file, id) {
-  const full = /<(?:html|head|body)\b|<!doctype/i.test(html);
-  let content = section(html, 'post-content'), references = section(html, 'post-references');
+  const tags = [...html.matchAll(markup)].map(([tag]) => tag);
+  const full = tags.some(tag => /^<(?:html|head|body)(?:\s|>)|^<!doctype\b/i.test(tag));
+  const tree = (full ? parse : parseFragment)(html, { sourceCodeLocationInfo: true });
+  let content = section(html, tree, 'post-content'), references = section(html, tree, 'post-references');
   if (full && content === null) throw Error(`Diary '${file}' has no .post-content section.`);
-  if (full) for (const tag of ['html', 'head', 'body']) if ((html.match(new RegExp(`<${tag}\\b`, 'gi')) || []).length !== 1 || (html.match(new RegExp(`</${tag}\\s*>`, 'gi')) || []).length !== 1) throw Error(`Incomplete <${tag}> in '${file}'.`);
+  if (full) for (const tag of ['html', 'head', 'body']) {
+    const starts = tags.filter(source => new RegExp(`^<${tag}(?:\\s|>)`, 'i').test(source));
+    const ends = tags.filter(source => new RegExp(`^</${tag}\\s*>$`, 'i').test(source));
+    if (starts.length !== 1 || ends.length !== 1) throw Error(`Incomplete <${tag}> in '${file}'.`);
+  }
   content ??= html.trim();
-  if (/<[^>]*\[\[[^>]*>/s.test(content)) throw Error(`Link marker inside tag in '${file}'.`);
+  if ([content, references || ''].some(section => [...section.matchAll(markup)].some(([tag]) => !tag.startsWith('<!') && tag.includes('[[')))) {
+    throw Error(`Link marker inside tag in '${file}'. Place [[https://address]] in the visible text.`);
+  }
   assertMarkup(content, file); if (references !== null) assertMarkup(references, file);
   const parsed = links(content); content = parsed.content;
   if (!/<[a-z][^>]*>/i.test(content)) content = content.trim().split(/\r?\n[\t ]*\r?\n+/).filter(x => x.trim()).map(p => `<p>${p.split(/\r?\n/).map(x => escape(x.trim())).join('<br>')}</p>`).join('\n');
@@ -63,7 +91,7 @@ function parseDiary(html, file, id) {
   const date = diaryDate(id), year = date.getUTCFullYear(), month = date.getUTCMonth() + 1, day = date.getUTCDate();
   const iso = date.toISOString().slice(0, 10), label = `${year}년 ${month}월 ${day}일`, longLabel = `${label} ${['일','월','화','수','목','금','토'][date.getUTCDay()]}요일`;
   content = content.replace(/^\s*<p>\s*\d{2}\.\d{2}\.\d{2}\s*<\/p>/, `<p>${id.slice(0,2)}.${id.slice(2,4)}.${id.slice(4,6)}</p>`);
-  let summary = decodeHTML(content.replace(/<(?:script|style)\b[\s\S]*?<\/(?:script|style)>/gi, '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().replace(/^\d{2}\.\d{2}\.\d{2}\s*/, '');
+  let summary = decodeHTML(content.replace(markup, ' ')).replace(/\s+/g, ' ').trim().replace(/^\d{2}\.\d{2}\.\d{2}\s*/, '');
   if (summary.length > 150) summary = summary.slice(0, 150) + '…';
   return { id, content, references, iso, label, longLabel, description: `${label} 일기. ${summary}` };
 }

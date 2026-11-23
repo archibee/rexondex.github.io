@@ -1,33 +1,65 @@
-﻿const fs = require('node:fs');
-const path = require('node:path');
+const { fs, path, dirs, imagePattern } = require('./site-common.cjs');
 const sharp = require('sharp');
-const args = process.argv.slice(2);
-const rootOption = args.indexOf('--site-root');
-const root = path.resolve(rootOption < 0 ? path.join(__dirname, '..') : args[rootOption + 1]);
-const check = args.includes('--check');
-(async () => {
-  const media = path.join(root, 'media');
-  if (!fs.existsSync(media)) return;
-  let stale = 0;
-  for (const sector of fs.readdirSync(media, { withFileTypes: true }).filter(e => e.isDirectory())) {
-    const sourceDir = path.join(media, sector.name);
-    const targetDir = path.join(root, 'thumbnails', sector.name);
-    for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true }).filter(e => e.isFile() && /\.(jpe?g|png|webp|gif|avif|heic)$/i.test(e.name))) {
-      const source = path.join(sourceDir, entry.name), target = path.join(targetDir, entry.name + '.webp');
-      if (fs.existsSync(target) && fs.statSync(target).mtimeMs >= fs.statSync(source).mtimeMs) continue;
-      stale++;
-      if (check) continue;
-      fs.mkdirSync(targetDir, { recursive: true });
-      const temporary = target + '.tmp';
+const { changes, commit, outputPath, withBuildLock } = require('./site-output.cjs');
+
+async function planThumbnails(root, check) {
+  const outputs = new Map();
+  const stale = new Map();
+  for (const sector of dirs(path.join(root, 'media')).filter(entry => entry.isDirectory())) {
+    const directory = `media/${sector.name}`;
+    const photos = dirs(path.join(root, directory)).filter(entry => entry.isFile() && imagePattern.test(entry.name));
+    for (const { name } of photos) {
+      const photo = `${directory}/${name}`;
+      const thumbnail = `thumbnails/${sector.name}/${name}.webp`;
+      const source = path.join(root, photo);
+      const target = outputPath(root, thumbnail);
+      const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+      let reason = stat ? 'photo is newer' : 'missing';
+      if (stat && stat.mtimeMs >= fs.statSync(source).mtimeMs) {
+        try {
+          const image = sharp(target);
+          const { format, width, height } = await image.metadata();
+          if (format === 'webp' && width <= 480 && height <= 480) {
+            await image.raw().toBuffer();
+            continue;
+          }
+          reason = 'expected WebP up to 480px';
+        } catch { reason = 'invalid WebP'; }
+      }
+      stale.set(thumbnail, reason);
+      if (check) {
+        outputs.set(thumbnail, Buffer.alloc(0));
+        continue;
+      }
       try {
-        await sharp(source, { animated: false }).rotate().resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true }).webp({ quality: 75 }).toFile(temporary);
-        fs.renameSync(temporary, target);
-        console.log('Created ' + path.relative(root, target));
+        const buffer = await sharp(source, { animated: false }).rotate()
+          .resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true }).webp({ quality: 75 }).toBuffer();
+        outputs.set(thumbnail, buffer);
       } catch (error) {
-        fs.rmSync(temporary, { force: true });
-        throw new Error(`Could not create thumbnail for ${source}: ${error.message}`);
+        throw Error(`${photo}: could not create ${thumbnail}. Check that the original opens correctly. ${error.message}`);
       }
     }
   }
-  if (check && stale) throw new Error(`${stale} thumbnail(s) are missing or out of date. Run the build without --check.`);
-})().catch(error => { console.error(error.message); process.exitCode = 1; });
+  return { outputs, stale };
+}
+
+if (require.main === module) {
+  const args = process.argv.slice(2), rootOption = args.indexOf('--site-root');
+  const root = path.resolve(rootOption < 0 ? path.join(__dirname, '..') : args[rootOption + 1]);
+  const check = args.includes('--check');
+  withBuildLock(root, check, async () => {
+    if (!fs.existsSync(path.join(root, 'media'))) return;
+    const { outputs, stale } = await planThumbnails(root, check);
+    if (check && stale.size) throw Error(`${stale.size} thumbnail(s) are missing or out of date. Run the build without --check.\n${[...stale].map(([name, reason]) => `  - ${name} (${reason})`).join('\n')}`);
+    if (!check) {
+      const updated = changes(root, outputs);
+      commit(updated);
+      for (const { name } of updated) console.log(`Created ${name}`);
+    }
+  }).catch(error => {
+    console.error(`FAIL: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { planThumbnails };

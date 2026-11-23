@@ -1,15 +1,44 @@
-const { fs, path, readArray, imagePattern, imageLike, natural, escape, exists, read, dirs, diaryDate, parseDiary } = require('./site-common.cjs');
+const { fs, path, readArray, imagePattern, natural, escape, read, dirs, parseDiary } = require('./site-common.cjs');
 const { spawnSync } = require('node:child_process');
 const { validate } = require('./validate-static-site.cjs');
-const argv = process.argv.slice(2), rootIndex = argv.indexOf('--site-root');
-const root = path.resolve(rootIndex < 0 ? path.join(__dirname, '..') : argv[rootIndex + 1]);
-const check = argv.includes('--check');
-const pending = new Map(), file = p => path.join(root, p), load = p => read(file(p));
-// Git checkouts may use CRLF on Windows; line-ending differences alone do not
-// change generated HTML and should not cause a rewrite or a stale-build error.
-const normalizeNewlines = value => value.replace(/\r\n/g, '\n');
-const isCurrent = (name, content) => exists(file(name)) && fs.statSync(file(name)).isFile() && normalizeNewlines(load(name)) === normalizeNewlines(content);
+const { homeTemplate } = require('./site-html.cjs');
+const { preflight } = require('./site-preflight.cjs');
+const { changes, commit, outputPath, withBuildLock } = require('./site-output.cjs');
+const { planThumbnails } = require('./generate-thumbnails.cjs');
 function fail(message) { throw Error(message); }
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+function readPhotoDescriptions(root) {
+  const source = outputPath(root, 'pictures.js');
+  if (!fs.existsSync(source)) {
+    console.warn('[WARN] pictures.js is missing. Any previous photo descriptions can be recovered from a known-good copy before rebuilding.');
+    return new Map();
+  }
+  try {
+    const result = new Map();
+    for (const sector of readArray(read(source), 'PICTURE_SECTORS')) {
+      if (!isObject(sector) || !/^[a-zA-Z0-9-]+$/.test(sector.id) || typeof sector.id !== 'string' || result.has(sector.id)) fail('Invalid or duplicate sector ID.');
+      const descriptions = Object.hasOwn(sector, 'descriptions') ? sector.descriptions : {};
+      if (!isObject(descriptions) || Object.values(descriptions).some(value => typeof value !== 'string')) fail(`${sector.id}: descriptions must map filenames to text.`);
+      result.set(sector.id, descriptions);
+    }
+    return result;
+  } catch (error) { fail(`pictures.js: ${error.message} Restore or correct the photo description data before rebuilding.`); }
+}
+
+function readPhotoOrder(root) {
+  const source = outputPath(root, 'picture-order.json');
+  if (!fs.existsSync(source)) return new Map();
+  try {
+    const value = JSON.parse(read(source));
+    if (!isObject(value)) fail('Expected an object with one filename array per sector.');
+    for (const [sector, names] of Object.entries(value)) {
+      if (!/^[a-zA-Z0-9-]+$/.test(sector) || !Array.isArray(names) || new Set(names).size !== names.length ||
+          names.some(name => typeof name !== 'string' || /[/\\]/.test(name) || !imagePattern.test(name))) fail(`${sector}: expected distinct photo filenames.`);
+    }
+    return new Map(Object.entries(value));
+  } catch (error) { fail(`picture-order.json: ${error.message} Check the sector and filename lists.`); }
+}
+
 function shell(heading, body, nav) { return `<div class="social-shell">
   <header class="mobile-header"><a href="./">rexondex</a></header>
   <aside class="side-nav"><a class="wordmark" href="./"><img class="brand-logo" src="./favicon.svg" alt=""><span>rexondex</span><small>archive</small></a><nav aria-label="주요 메뉴"><a href="./">일기</a><a href="./pictures.html">사진</a></nav></aside>
@@ -19,80 +48,56 @@ function shell(heading, body, nav) { return `<div class="social-shell">
     <footer class="diary-post">${nav}</footer>
   </section></main>
 </div>`; }
-function commit() {
-  const id = `${process.pid}-${Date.now()}`, transactions = [];
-  let complete = false, restored = true;
-  try {
-    for (const [name, content] of pending) {
-      const target = file(name), temp = `${target}.seo-tmp-${id}`, backup = `${target}.seo-backup-${id}`;
-      if (exists(target) && fs.statSync(target).isDirectory()) fail(`Cannot write generated file '${name}' because a folder exists there.`);
-      if (isCurrent(name, content)) continue;
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      const item = { target, temp, backup, had: exists(target), applied: false }; transactions.push(item);
-      fs.writeFileSync(temp, content); if (item.had) fs.copyFileSync(target, backup);
-    }
-    for (const item of transactions) { fs.renameSync(item.temp, item.target); item.applied = true; }
-    complete = true;
-  } catch (error) {
-    for (const item of transactions.reverse()) if (item.applied) try { if (item.had) fs.copyFileSync(item.backup, item.target); else fs.rmSync(item.target, { force: true }); } catch { restored = false; }
-    if (!restored) throw Error(`Could not write generated files: ${error.message}. Rollback incomplete; backups retained: ${transactions.filter(x => exists(x.backup)).map(x => x.backup).join(', ')}`);
-    throw Error(`Could not write generated files: ${error.message}. Existing outputs restored.`);
-  } finally {
-    for (const item of transactions) { try { fs.rmSync(item.temp, { force: true }); if (complete || restored) fs.rmSync(item.backup, { force: true }); } catch (e) { console.warn(e.message); } }
-  }
-}
-try {
-  console.log('[1/4] Generating thumbnails and reading sources...');
-  const thumb = spawnSync(process.execPath, [path.join(__dirname, 'generate-thumbnails.cjs'), '--site-root', root, ...(check ? ['--check'] : [])], { stdio: 'inherit' });
-  if (thumb.status !== 0) fail('Thumbnail generation failed. Run npm install and check the reported error.');
-  if (!exists(file('database'))) fail('Diary folder not found: database/');
+async function build(root, check) {
+  const file = name => path.join(root, name), load = name => read(file(name));
+  console.log('[1/4] Checking site layout and reading sources...');
+  preflight(root);
   const diaryEntries = dirs(file('database'));
-  if (diaryEntries.some(e => e.isDirectory() && /^\d{6}\.html$/.test(e.name))) fail('Diary entry is a folder. Use an HTML file.');
   const ids = diaryEntries.filter(e => e.isFile() && /^\d{6}\.html$/.test(e.name)).map(e => e.name.slice(0, 6)).sort().reverse();
-  for (const id of ids) diaryDate(id);
   if (!ids.length) fail('No publishable diaries found.');
-  const previous = exists(file('pictures.js')) ? readArray(load('pictures.js'), 'PICTURE_SECTORS') : [];
-  const photoOrder = exists(file('picture-order.json')) ? JSON.parse(load('picture-order.json')) : {};
-  if (!exists(file('media'))) fail('Missing media/ folder.');
-  for (const old of ['picture', 'picutre']) if (exists(file(old))) fail(`Obsolete '${old}/' folder found.`);
+  const diaryErrors = [], diaries = new Map();
+  for (const id of ids) {
+    const name = `database/${id}.html`;
+    try { diaries.set(id, parseDiary(load(name), name, id)); }
+    catch (error) { diaryErrors.push(`  - ${name}: ${error.message}`); }
+  }
+  if (diaryErrors.length) fail(`Diary input errors. Review the published filenames or markup:\n${diaryErrors.join('\n')}`);
+  const previous = readPhotoDescriptions(root);
+  const photoOrder = readPhotoOrder(root);
+  const { site, graph, render } = homeTemplate(load('index.html'));
   const entries = dirs(file('media'));
-  if (entries.some(e => e.isFile() && imageLike.test(e.name))) fail('Photos must be inside a sector folder.');
   const folders = entries.filter(e => e.isDirectory()).map(e => e.name).sort(natural);
   if (!folders.length) fail('No photo sectors found.');
+  const { outputs: pending, stale: thumbnails } = await planThumbnails(root, check);
   const sectors = folders.map(id => {
-    if (!/^[a-zA-Z0-9-]+$/.test(id)) fail(`Invalid photo sector '${id}'.`);
     const direct = dirs(file(`media/${id}`));
-    const unsupported = direct.find(e => e.isFile() && imageLike.test(e.name) && !imagePattern.test(e.name));
-    if (unsupported) fail(`Unsupported photo format '${unsupported.name}'.`);
-    function nested(dir) { return dirs(dir).some(e => e.isDirectory() ? nested(path.join(dir,e.name)) : imageLike.test(e.name)); }
-    if (direct.some(e => e.isDirectory() && nested(file(`media/${id}/${e.name}`)))) fail(`Nested photo folders are not supported: ${id}.`);
     const files = direct.filter(e => e.isFile() && imagePattern.test(e.name)).map(e => e.name).sort(natural).reverse();
-    if (photoOrder[id]) {
-      if (!Array.isArray(photoOrder[id]) || new Set(photoOrder[id]).size !== photoOrder[id].length || photoOrder[id].some(name => typeof name !== 'string')) fail(`Invalid photo order: ${id}.`);
-      const ranks = new Map(photoOrder[id].map((name, i) => [name, i]));
+    if (photoOrder.has(id)) {
+      const ranks = new Map(photoOrder.get(id).map((name, i) => [name, i]));
+      for (const name of ranks.keys()) if (!files.includes(name)) console.warn(`[WARN] picture-order.json ${id}/${name}: photo is missing or its name differs. Review this entry.`);
       files.sort((a, b) => (ranks.get(a) ?? -1) - (ranks.get(b) ?? -1));
     }
-    const prior = previous.find(x => x.id === id)?.descriptions || {}, descriptions = {};
-    for (const name of Object.keys(prior).sort()) if (files.includes(name)) descriptions[name] = prior[name];
-    return { id, descriptions, files, thumbnails: files.filter(name => exists(file(`thumbnails/${id}/${name}.webp`))) };
+    const prior = previous.get(id) || {};
+    for (const name of Object.keys(prior)) if (!files.includes(name) && prior[name]) fail(`pictures.js ${id}/${name}: photo with a description is missing. Move or remove its description after reviewing it.`);
+    const descriptions = Object.fromEntries(Object.keys(prior).sort().filter(name => files.includes(name)).map(name => [name, prior[name]]));
+    return { id, descriptions, files, thumbnails: [...files] };
   });
+  for (const [id, descriptions] of previous) if (!folders.includes(id) && Object.values(descriptions).some(Boolean)) {
+    fail(`pictures.js ${id}: sector with photo descriptions is missing. Move or remove its descriptions after reviewing them.`);
+  }
+  for (const id of photoOrder.keys()) if (!folders.includes(id)) console.warn(`[WARN] picture-order.json ${id}: sector is missing. Review this entry.`);
   pending.set('database.js', `// Generated from database/ by scripts/build-static-site.cjs. Add HTML files to the folder.\nwindow.DIARY_FILES = [\n${ids.slice().reverse().map(id => `  '${id}.html',`).join('\n')}\n];\n`);
   pending.set('pictures.js', `// File lists are generated from media/sector folders. Photo descriptions are preserved.\nwindow.PICTURE_SECTORS = ${JSON.stringify(sectors, null, 2)};\n`);
-  const home = load('index.html'), headMatch = /<head>([\s\S]*?)<\/head>/i.exec(home);
-  if (!headMatch) fail("Home template 'index.html' has no complete <head> section.");
-  let template = headMatch[1], site = /<link rel="canonical" href="([^"]+)"/.exec(template)?.[1];
-  if (!site || !site.endsWith('/') || !/^https:\/\//.test(site) || new URL(site).search || new URL(site).hash) fail('Home canonical must be an absolute HTTPS URL ending in /.');
-  for (const pattern of [/<title\b[\s\S]*?<\/title>/gi, /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/gi, /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/gi, /<meta\s+property="og:url"\s+content="[^"]*"\s*\/?>/gi, /<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/gi]) if ([...template.matchAll(pattern)].length !== 1) fail('Home template is missing a required metadata tag.');
-  const graph = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(template)?.[1] || '{}')['@graph'];
-  if (!Array.isArray(graph)) fail('Home template has no JSON-LD @graph.');
-  template = template.replace(/\s*<script\b[\s\S]*?<\/script>/gi, '').replace(/\s*<base\b[^>]*>/gi, '').trim();
   function page(name, title, description, body, attributes = '', entity = null) {
     const url = name === 'index.html' ? site : site + name;
-    let head = template.replace(/<title>.*?<\/title>/, () => `<title>${escape(title)}</title>`).replace(/(<meta\s+name="viewport"\s+content=")[^"]*(")/i, '$1width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no$2');
-    for (const key of ['description','og:description','twitter:description']) head = head.replace(new RegExp(`((?:name|property)="${key}" content=")[^"]*`), (_, p) => p + escape(description));
-    for (const key of ['og:title','twitter:title']) head = head.replace(new RegExp(`((?:name|property)="${key}" content=")[^"]*`), (_, p) => p + escape(title));
-    head = head.replace(/(rel="canonical" href=")[^"]*/, (_, p) => p + url).replace(/(property="og:url" content=")[^"]*/, (_, p) => p + url);
-    if (entity?.['@type'] === 'BlogPosting') head = head.replace('property="og:type" content="website"', 'property="og:type" content="article"') + `\n<meta property="article:published_time" content="${entity.datePublished}">`;
+    const article = entity?.['@type'] === 'BlogPosting';
+    let head = render({ title, url, meta: {
+      viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
+      description, 'og:description': description, 'twitter:description': description, 'og:title': title,
+      'twitter:title': title, 'og:url': url, 'og:type': article ? 'article' : 'website',
+      robots: 'index, follow, max-image-preview:large'
+    } });
+    if (article) head += `\n<meta property="article:published_time" content="${entity.datePublished}">`;
     const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': entity ? [...graph, entity] : graph }, null, 2).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
     const scripts = '<script src="./legacy-links.js"></script><script src="./theme-init.js"></script><script defer src="./database.js"></script><script defer src="./pictures.js"></script><script defer src="./app.js"></script>';
     const noscript = '<noscript><p>달력과 테마 설정은 JavaScript를 활성화하면 사용할 수 있습니다. <a href="./">메인</a> · <a href="./archive.html">전체 일기</a> · <a href="./pictures.html">사진</a></p></noscript>';
@@ -100,7 +105,7 @@ try {
   }
   console.log('[2/4] Rendering static pages in memory...');
   const posts = ids.map((id, i) => {
-    const name = `database/${id}.html`, d = parseDiary(load(name), name, id), reference = d.references === null ? '' : `<div class="post-references" aria-label="참고 링크">${d.references}</div>`;
+    const name = `database/${id}.html`, d = diaries.get(id), reference = d.references === null ? '' : `<div class="post-references" aria-label="참고 링크">${d.references}</div>`;
     const post = `<article class="diary-post" id="daily-${id}" aria-label="${escape(d.longLabel)}">\n  <header><img class="post-avatar" src="./rexondex.jpg" alt="" width="44" height="44"><div><strong>rexondex</strong><time datetime="${d.iso}">${escape(d.longLabel)}</time></div></header>\n  ${reference}\n  <div class="post-content">${d.content}</div>\n  <footer><a class="post-permalink" href="./${name}">${id} &#183; &#47553;&#53356;</a></footer>\n</article>`;
     let nav = '<a href="./">메인</a> · <a href="./archive.html">전체 일기</a>';
     if (i > 0) nav += ` · <a href="./database/${ids[i-1]}.html">다음 일기</a>`;
@@ -124,10 +129,37 @@ try {
     urls.push(`<url><loc>${site}${name}</loc>${sector.files.filter(f => !/\.heic$/i.test(f)).map(f => `<image:image><image:loc>${site}media/${sector.id}/${encodeURIComponent(f)}</image:loc></image:image>`).join('')}</url>`);
   });
   pending.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${urls.join('\n')}\n</urlset>\n`);
-  console.log('[3/4] Checking pages, manifests, media and local links...'); validate(root, pending);
+  console.log('[3/4] Checking pages, manifests, local links and browser logic...');
+  validate(root, pending);
+  const runtime = spawnSync(process.execPath, [path.join(__dirname, 'test-runtime.cjs'), root], { encoding: 'utf8', timeout: 15000 });
+  if (runtime.error) fail(`app.js runtime checks could not finish: ${runtime.error.message}`);
+  if (runtime.status !== 0) fail(`app.js runtime checks failed. Review the failing test below.\n${runtime.stdout}${runtime.stderr}`);
+  console.log('PASS: app.js runtime regression tests.');
+  const changed = changes(root, pending);
   if (check) {
-    const changed = [...pending].filter(([name, content]) => !isCurrent(name, content)).map(([name]) => name);
-    if (changed.length) fail(`Generated output is out of date: ${changed.join(', ')}. Run the builder without --check.`);
+    const thumbnailStatus = thumbnails.size ? ` ${thumbnails.size} thumbnail(s) are missing or out of date.` : '';
+    if (changed.length) fail(`Generated output is out of date.${thumbnailStatus} Run the builder without --check.\n${changed.map(({ name }) => `  - ${name}${thumbnails.has(name) ? ` (${thumbnails.get(name)})` : ''}`).join('\n')}`);
     console.log('[4/4] PASS: generated files are current; no files changed.');
-  } else { console.log('[4/4] Saving validated pages with rollback protection...'); commit(); console.log(`Updated snapshots and sitemap for ${ids.length} diaries and ${sectors.length} galleries.`); }
-} catch (error) { console.error(`FAIL: ${error.message}`); process.exitCode = 1; }
+  } else {
+    console.log('[4/4] Saving validated outputs with rollback protection...');
+    commit(changed);
+    for (const { name } of changed) console.log(`[UPDATED] ${name}${thumbnails.has(name) ? ` (${thumbnails.get(name)})` : ''}`);
+    console.log(`PASS: ${changed.length} output(s) updated. ${ids.length} diaries and ${sectors.length} galleries.`);
+  }
+}
+
+async function main(args) {
+  let root = path.join(__dirname, '..'), check = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--check') check = true;
+    else if (args[i] === '--site-root' && args[i + 1] && !args[i + 1].startsWith('--')) root = args[++i];
+    else fail(`Unknown or incomplete argument '${args[i]}'. Usage: node scripts/build-static-site.cjs [--check] [--site-root PATH]`);
+  }
+  const siteRoot = fs.realpathSync(root);
+  await withBuildLock(siteRoot, check, () => build(siteRoot, check));
+}
+
+if (require.main === module) main(process.argv.slice(2)).catch(error => {
+  console.error(`FAIL: ${error.message}`);
+  process.exitCode = 1;
+});

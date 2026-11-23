@@ -3,7 +3,8 @@ const { spawnSync } = require('node:child_process');
 const project = path.resolve(__dirname, '..'), fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'archive-test-'));
 const target = name => path.join(fixture, name), put = (name, text) => fs.writeFileSync(target(name), text);
 function snapshot() {
-  return ['index.html','archive.html','pictures.html','database.js','pictures.js','sitemap.xml','database/261101.html'].map(name => fs.existsSync(target(name)) ? crypto.createHash('sha256').update(fs.readFileSync(target(name))).digest('hex') : '').join(':');
+  return ['index.html','archive.html','pictures.html','database.js','pictures.js','sitemap.xml','database/261101.html',
+    'thumbnails/PIC-1/photo.jpg.webp','thumbnails/PIC-1/another.jpg.webp'].map(name => fs.existsSync(target(name)) ? crypto.createHash('sha256').update(fs.readFileSync(target(name))).digest('hex') : '').join(':');
 }
 function build(expected = '', check = false) {
   const before = snapshot(), result = spawnSync(process.execPath, [path.join(__dirname,'build-static-site.cjs'),'--site-root',fixture,...(check ? ['--check'] : [])], { encoding:'utf8' });
@@ -13,10 +14,15 @@ function build(expected = '', check = false) {
     if (snapshot() !== before) throw Error(`Failed build modified generated files: ${expected}`);
   } else if (result.status !== 0) throw Error(`Build failed: ${output}`);
   if (check && snapshot() !== before) throw Error('Check mode wrote generated files.');
+  return output;
 }
 try {
   for (const name of ['database','media/PIC-1','pictures']) fs.mkdirSync(target(name), { recursive:true });
-  for (const entry of fs.readdirSync(project,{withFileTypes:true})) if (entry.isFile()) fs.copyFileSync(path.join(project,entry.name),target(entry.name));
+  for (const entry of fs.readdirSync(project,{withFileTypes:true})) {
+    if (entry.isFile() && entry.name !== '.static-site-build.lock' && !/\.seo-(?:tmp|backup)-/.test(entry.name)) {
+      fs.copyFileSync(path.join(project,entry.name),target(entry.name));
+    }
+  }
   const photo = fs.readdirSync(path.join(project,'media/PIC-1')).find(name => name.endsWith('.jpg'));
   fs.copyFileSync(path.join(project,'media/PIC-1',photo),target('media/PIC-1/photo.jpg'));
   put('database/261101.html','<p>Fixture diary.</p>');
@@ -36,10 +42,38 @@ try {
   const beforeSecondBuild = snapshot();
   build();
   if (snapshot() !== beforeSecondBuild) throw Error('Repeated build changed generated files.');
+  const index = fs.readFileSync(target('index.html'), 'utf8');
+  put('index.html', index.replace('<link rel="canonical" href="https://rexondex.github.io/">', "<link\n  href = 'https://rexondex.github.io/' rel='canonical' >")
+    .replace('<div id="app">', '<div\n  id = app>\n\n'));
+  const formatted = snapshot();
+  build('', true);
+  build();
+  if (snapshot() !== formatted) throw Error('Formatting-only HTML was rewritten.');
+  put('index.html', index);
   const image = target('media/PIC-1/photo.jpg');
   fs.utimesSync(image, new Date(Date.now() + 10000), new Date(Date.now() + 10000));
   build('thumbnail(s) are missing or out of date', true);
   fs.utimesSync(image, new Date(), new Date());
+  const thumbnail = 'thumbnails/PIC-1/photo.jpg.webp';
+  put(thumbnail, 'broken thumbnail');
+  build('invalid WebP', true);
+  const repair = build();
+  if (!repair.includes(`[UPDATED] ${thumbnail} (invalid WebP)`)) throw Error('Corrupt thumbnail repair was not reported.');
+  build('', true);
+
+  const stylesheet = fs.readFileSync(target('style.css'), 'utf8');
+  put('style.css', `${stylesheet}\n.bad { color: red`);
+  build('style.css:');
+  put('style.css', stylesheet);
+  put('database/2611.html', '<p>Wrong filename.</p>');
+  build('database/2611.html');
+  fs.rmSync(target('database/2611.html'));
+  put('extra.html', '<p>Unmanaged page.</p>');
+  if (!build('', true).includes('[WARN] extra.html')) throw Error('Unexpected root path was not reported.');
+  fs.rmSync(target('extra.html'));
+  put('.static-site-build.lock', 'fixture');
+  build('a build is already running');
+  fs.rmSync(target('.static-site-build.lock'));
   const runtime = fs.readFileSync(target('app.js'),'utf8');
   put('app.js',runtime.replace("['picture',", "['media',")); build('Navigation view');
   put('app.js',runtime.replace("picture: '<rect", "missingIcon: '<rect")); build('Navigation icon');
@@ -49,9 +83,19 @@ try {
   const cleanDiary = fs.readFileSync(target('database/261101.html'),'utf8');
   put('database/261101.html',cleanDiary.replaceAll('Fixture diary.','<script>alert(1)</script>')); build('unsupported'); put('database/261101.html',cleanDiary);
   const diary = fs.readFileSync(target('database/261101.html'),'utf8');
+  fs.copyFileSync(image, target('media/PIC-1/another.jpg'));
   put('database/261101.html',diary.replaceAll('Fixture diary.',"Fixture diary.<img src='./media/PIC-1/missing.jpg' alt=''>")); build('Broken link');
+  if (fs.existsSync(target('thumbnails/PIC-1/another.jpg.webp'))) throw Error('Failed validation published a queued thumbnail.');
+  fs.rmSync(target('media/PIC-1/another.jpg'));
   put('database/261101.html',diary.replaceAll('Fixture diary.',"Fixture diary.<img src='./media/pic-1/photo.jpg' alt=''>")); build('Broken link');
+  put('database/261101.html',diary.replace('<p>Fixture diary.</p>', '<p>Outer <p>Inner</p></p>')); build('Invalid HTML nesting');
+  put('database/261101.html',diary.replace('<p>Fixture diary.</p>', '<p title="x > y">Fixture diary.</p><pre>one\n  two</pre>')); build(); build('', true);
+  const preformatted = fs.readFileSync(target('archive.html'), 'utf8');
+  put('archive.html', preformatted.replace('one\n  two</pre>', 'one\n two</pre>'));
+  build('archive.html', true); build();
+  if (fs.readFileSync(target('archive.html'), 'utf8') !== preformatted) throw Error('Meaningful preformatted text was not restored.');
   put('database/261101.html',diary); put('pictures/obsolete.html','<p>Old gallery.</p>'); build('Obsolete gallery'); fs.rmSync(target('pictures/obsolete.html'));
+  put('archive.html', '<p>Damaged generated HTML.</p>'); build('archive.html',true); build(); build('',true);
   put('database.js','window.DIARY_FILES = [];'); build('out of date',true); build();
   fs.mkdirSync(target('picture')); build("Obsolete 'picture/'"); fs.rmSync(target('picture'),{recursive:true});
   fs.rmSync(target('media/PIC-1/photo.jpg')); build(); build('',true);
